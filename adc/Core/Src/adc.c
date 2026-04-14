@@ -221,13 +221,13 @@ uint16_t get_adcx_value(ADC_HandleTypeDef *hadc,
     ch_config.Offset = Offset;  //用来手动修正 ADC 硬件误差的高级功能
     ch_config.Rank = Rank; //这个通道是第几个采
     ch_config.SamplingTime = SamplingTime; //采样时间（ADC 采样多久）
-    HAL_ADC_ConfigChannel(&hadc, &ch_config);
+    HAL_ADC_ConfigChannel(hadc, &ch_config);
     // 2. 启动ADC转换
-    HAL_ADC_Start(&hadc);
+    HAL_ADC_Start(hadc);
     // 3. 等待转换完成
-    HAL_ADC_PollForConversion(&hadc, Timeout);
+    HAL_ADC_PollForConversion(hadc, Timeout);
     // 4. 读取结果（这就是你问的 HAL_ADC_GetValue）
-    uint16_t val = HAL_ADC_GetValue(&hadc);
+    uint16_t val = HAL_ADC_GetValue(hadc);
     return val;
 }
 
@@ -253,7 +253,7 @@ float get_battery_voltage(void)
     return bat_voltage;
 }
 
-float get_temprate(void)
+float get_temperature(void)
 {
     uint16_t adcx = 0;
     float temperate;

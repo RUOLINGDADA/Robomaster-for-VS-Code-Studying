@@ -18,14 +18,12 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "adc.h"
+#include "usart.h"
 #include "gpio.h"
-#include "stm32f4xx_hal.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-float battery_voltage = 0;
-float temperature = 0;
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,7 +44,7 @@ float temperature = 0;
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+uint8_t str[] = "Hello, UART IT Mode!\r\n";
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -89,22 +87,35 @@ int main(void)
 
     /* Initialize all configured peripherals */
     MX_GPIO_Init();
-    MX_ADC1_Init();
-    MX_ADC3_Init();
+    MX_USART1_UART_Init();
     /* USER CODE BEGIN 2 */
-
-
+    HAL_GPIO_WritePin(GPIOH, GREEN_LED_Pin, RESET); // 初始化绿灯灭
     /* USER CODE END 2 */
 
     /* Infinite loop */
     /* USER CODE BEGIN WHILE */
     while (1)
     {
+        /*  sizeof算的是内存大小 编译期就确定了 包含\0
+            strlen运行时计算不包含\0
+            char str1[] = "hello";
+            char *str2 = "hello";
+            sizeof(str1) = 6字节
+            sizeof(str2) = 4字节
+            总结:
+            定长字符串用sizeof(str1) - 1
+            不定长字符串用strlen(str1)
+            指针类型的字符串 只能用strlen(str1)
+          */
+        HAL_GPIO_WritePin(GPIOH, GREEN_LED_Pin, SET);  // 绿灯亮
+        // 启动中断发送 注意：这里只是启动，立刻就会往下执行，不会阻塞
+        if (HAL_UART_Transmit_IT(&huart1, str, sizeof(str) - 1) != HAL_OK)
+        {
+            // 如果启动失败（比如上一次还没发完），强制切回空闲状态
+            HAL_GPIO_WritePin(GPIOH, GREEN_LED_Pin, RESET);
+        }
+        HAL_Delay(1000);
         /* USER CODE END WHILE */
-        battery_voltage = get_battery_voltage();
-        HAL_Delay(2000);
-        temperature = get_temperature();
-        HAL_Delay(2000);
 
         /* USER CODE BEGIN 3 */
     }
@@ -157,7 +168,16 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+// 发送完成回调函数
+// 当 UART 硬件把最后一个字节发完后，HAL 库会自动调用这个函数
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    // 判断是不是我们要的 USART1
+    if (huart->Instance == USART1)
+    {
+        HAL_GPIO_WritePin(GPIOH, GREEN_LED_Pin, RESET); // 绿灯灭
+    }
+}
 /* USER CODE END 4 */
 
 /**

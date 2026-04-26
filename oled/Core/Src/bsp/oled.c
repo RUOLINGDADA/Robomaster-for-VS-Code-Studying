@@ -1,23 +1,13 @@
 #include "oled.h"
 #include "i2c.h"
 
-
-/************************ 精简8*16 ASCII字库 ************************/
 static const uint8_t OLED_ASCII_Font[][16] =
 {
 #include "font_ascii_8x16.h"
 };
 
-/************************ 内部GRAM缓存 ************************/
 static uint8_t OLED_GRAM[OLED_WIDTH][OLED_HEIGHT / 8] = {0};
 
-/************************ 静态内部函数（仅内部调用） ************************/
-/**
- * @brief  I2C发送单字节（命令/数据）
- * @param  data: 要发送的数据
- * @param  mode: 0=命令，1=数据
- * @retval 无
- */
 static void OLED_SendByte(uint8_t data, uint8_t mode)
 {
     uint8_t buf[2] = {mode, data};

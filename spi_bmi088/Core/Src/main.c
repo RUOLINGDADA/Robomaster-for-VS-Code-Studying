@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "spi.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -25,6 +26,7 @@
 /* USER CODE BEGIN Includes */
 #include "bmi088.h"
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include "spi.h"
 /* USER CODE END Includes */
@@ -40,6 +42,11 @@ BMI088_HandleTypeDef bmi088 = {.hspi = &hspi1,
 
 BMI088_RawDataTypeDef raw;
 BMI088_PhysDataTypeDef phys;
+volatile uint8_t bmi088_drdy_flag = 0;
+volatile uint32_t bmi088_irq_count = 0;
+volatile uint32_t bmi088_read_count = 0;
+volatile uint32_t bmi088_read_error_count = 0;
+static uint32_t temp_div = 0;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -134,15 +141,67 @@ int main(void)
                 BMI088_ACC_ODR_1600HZ,
                 BMI088_GYRO_RANGE_2000DPS,
                 BMI088_GYRO_BW_532HZ_2000HZ);
+    // BMI088_Init(&bmi088,
+    //             BMI088_ACC_RANGE_24G,
+    //             BMI088_ACC_ODR_400HZ,
+    //             BMI088_GYRO_RANGE_2000DPS,
+    //             BMI088_GYRO_BW_47HZ_400HZ);
     /* USER CODE END 2 */
 
     /* Infinite loop */
     /* USER CODE BEGIN WHILE */
     while (1)
     {
-        BMI088_ReadRaw(&bmi088, &raw);
-        BMI088_ConvertRawToPhys(&bmi088, &raw, &phys);
-        HAL_Delay(10);
+        // if (bmi088_new_data_exti_flags & 0x01)
+        // {
+        //     // 读取寄存器清除标志位
+        //     if (BMI088_ClearFlag(&bmi088, BMI088_ACC_INT_FLAG) != BMI088_OK)
+        //     {
+        //         return BMI088_ERROR;
+        //     }
+        //     BMI088_ReadRaw(&bmi088, &raw);
+        //     BMI088_ConvertRawToPhys(&bmi088, &raw, &phys);
+        //     bmi088_new_data_exti_flags &= ~BMI088_ACC_INT_FLAG;
+        // }
+        // else if (bmi088_new_data_exti_flags & 0x02)
+        // {
+        //     // 读取寄存器清除标志位
+        //     if (BMI088_ClearFlag(&bmi088, BMI088_GYRO_INT_FLAG) != BMI088_OK)
+        //     {
+        //         return BMI088_ERROR;
+        //     }
+        //     BMI088_ReadRaw(&bmi088, &raw);
+        //     BMI088_ConvertRawToPhys(&bmi088, &raw, &phys);
+        //     bmi088_new_data_exti_flags &= ~BMI088_GYRO_INT_FLAG;
+        // }
+
+        uint8_t flag = 0;
+
+        __disable_irq();
+        flag = bmi088_drdy_flag;
+        bmi088_drdy_flag = 0;
+        __enable_irq();
+
+        if (flag)
+        {
+            if (BMI088_ReadRaw6Axis(&bmi088, &raw) == BMI088_OK)
+            {
+                if (++temp_div >= 40)   // 400Hz 下约 10Hz 读温度
+                {
+                    temp_div = 0;
+                    BMI088_ReadTemperature(&bmi088, &raw);
+                }
+
+                BMI088_ConvertRawToPhys(&bmi088, &raw, &phys);
+                bmi088_read_count++;
+            }
+            else
+            {
+                bmi088_read_error_count++;
+            }
+
+        }
+
         /* USER CODE END WHILE */
 
         /* USER CODE BEGIN 3 */
@@ -196,7 +255,37 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+/**
+GYRO DRDY INT3 作为唯一采样中断
+    ↓
+EXTI 回调只置位 flag，不读 SPI
+    ↓
+main while 中看到 flag
+    ↓
+一次性 BMI088_ReadRaw() 读取 ACC + GYRO
+    ↓
+BMI088_ConvertRawToPhys()
+    ↓
+温度每 100 次或 200 次再读一次
+*/
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    // if (GPIO_Pin == INT1_Accel_Pin)
+    // {
+    //     // 0000 0001
+    //     bmi088_new_data_exti_flags |= BMI088_ACC_INT_FLAG;
+    // }
+    // else if (GPIO_Pin == INT1_Gyro_Pin)
+    // {
+    //     // 0000 0010
+    //     bmi088_new_data_exti_flags |= BMI088_GYRO_INT_FLAG;
+    // }
+    if (GPIO_Pin == INT1_Gyro_Pin)
+    {
+        bmi088_drdy_flag = 1;
+        bmi088_irq_count++;
+    }
+}
 /* USER CODE END 4 */
 
 /**

@@ -1,9 +1,15 @@
 #include "bmi088.h"
+#include "stm32f4xx_hal_def.h"
+#include <stdint.h>
 
 static void BMI088_ACC_CS_Low(BMI088_HandleTypeDef *hbmi);
 static void BMI088_ACC_CS_High(BMI088_HandleTypeDef *hbmi);
 static void BMI088_GYRO_CS_Low(BMI088_HandleTypeDef *hbmi);
 static void BMI088_GYRO_CS_High(BMI088_HandleTypeDef *hbmi);
+static BMI088_StatusTypeDef
+BMI088_EnableAccDRDYInterrupt(BMI088_HandleTypeDef *hbmi);
+static BMI088_StatusTypeDef
+BMI088_EnableGyroDRDYInterrupt(BMI088_HandleTypeDef *hbmi);
 
 static BMI088_StatusTypeDef BMI088_ACC_WriteReg(BMI088_HandleTypeDef *hbmi, uint8_t reg, uint8_t val);
 static BMI088_StatusTypeDef BMI088_ACC_ReadReg(BMI088_HandleTypeDef *hbmi, uint8_t reg, uint8_t *val);
@@ -222,6 +228,12 @@ BMI088_StatusTypeDef BMI088_Init(BMI088_HandleTypeDef *hbmi,
     }
     HAL_Delay(2);
 
+    // // 开启加速度计中断
+    // if (BMI088_EnableAccDRDYInterrupt(hbmi) != BMI088_OK)
+    // {
+    //     return BMI088_ERROR;
+    // }
+
     // 加速计上电
     if (BMI088_ACC_WriteReg(hbmi, BMI088_ACC_PWR_CTRL_REG, 0x04U) != BMI088_OK)
     {
@@ -250,6 +262,12 @@ BMI088_StatusTypeDef BMI088_Init(BMI088_HandleTypeDef *hbmi,
     }
     HAL_Delay(2);
 
+    // 开启陀螺仪中断
+    if (BMI088_EnableGyroDRDYInterrupt(hbmi) != BMI088_OK)
+    {
+        return BMI088_ERROR;
+    }
+
     // 配置陀螺仪电源模式(NORMAL)
     if (BMI088_GYRO_WriteReg(hbmi, BMI088_GYRO_LPM1_REG, 0x00U) != BMI088_OK)
     {
@@ -268,8 +286,8 @@ static inline int16_t BMI088_MakeInt16(uint8_t lsb, uint8_t msb)
     return (int16_t)(((uint16_t)msb << 8U) | lsb);
 }
 
-BMI088_StatusTypeDef BMI088_ReadRaw(BMI088_HandleTypeDef *hbmi,
-                                    BMI088_RawDataTypeDef *raw)
+BMI088_StatusTypeDef BMI088_ReadRaw6Axis(BMI088_HandleTypeDef *hbmi,
+        BMI088_RawDataTypeDef *raw)
 {
     if (hbmi == NULL || hbmi->hspi == NULL || raw == NULL)
     {
@@ -309,6 +327,12 @@ BMI088_StatusTypeDef BMI088_ReadRaw(BMI088_HandleTypeDef *hbmi,
     raw->Gyro_Y = BMI088_MakeInt16(rx_gyro[3], rx_gyro[4]);
     raw->Gyro_Z = BMI088_MakeInt16(rx_gyro[5], rx_gyro[6]);
 
+    return BMI088_OK;
+}
+
+BMI088_StatusTypeDef BMI088_ReadTemperature(BMI088_HandleTypeDef *hbmi,
+        BMI088_RawDataTypeDef *raw)
+{
     uint8_t t_msb = 0, t_lsb = 0;
     if (BMI088_ACC_ReadReg(hbmi, BMI088_ACC_TEMP_MSB_REG, &t_msb) != BMI088_OK)
     {
@@ -320,8 +344,6 @@ BMI088_StatusTypeDef BMI088_ReadRaw(BMI088_HandleTypeDef *hbmi,
     }
 
     raw->Temp_Raw = (int16_t)(((uint16_t)t_msb << 3U) | (t_lsb >> 5U));
-
-    return BMI088_OK;
 }
 
 BMI088_StatusTypeDef BMI088_ConvertRawToPhys(BMI088_HandleTypeDef *hbmi,
@@ -381,4 +403,73 @@ BMI088_StatusTypeDef BMI088_ConvertRawToPhys(BMI088_HandleTypeDef *hbmi,
     phys->Temp = 23.0f + (float)temp * 0.125f;
 
     return BMI088_OK;
+}
+
+static BMI088_StatusTypeDef BMI088_EnableAccDRDYInterrupt(BMI088_HandleTypeDef *hbmi)
+{
+    // 配置加速度计中断引脚映射 INT1DRDY
+    if (BMI088_ACC_WriteReg(hbmi, BMI088_ACC_INT1_INT2_MAP_DATA_REG, 0x04U) != BMI088_OK)
+    {
+        return BMI088_ERROR;
+    }
+
+    // 配置INT1推挽输出低电平有效
+    if (BMI088_ACC_WriteReg(hbmi, BMI088_ACC_INT1_IO_CONF_REG, 0x08U) != BMI088_OK)
+    {
+        return BMI088_ERROR;
+    }
+    return BMI088_OK;
+}
+
+static BMI088_StatusTypeDef
+BMI088_EnableGyroDRDYInterrupt(BMI088_HandleTypeDef *hbmi)
+{
+    // 配置陀螺仪中断引脚映射 INT3DRDY
+    if (BMI088_GYRO_WriteReg(hbmi, BMI088_GYRO_INT3_INT4_IO_MAP_REG, 0x01U) != BMI088_OK)
+    {
+        return BMI088_ERROR;
+    }
+
+    // 配置INT3推挽输出低电平有效
+    if (BMI088_GYRO_WriteReg(hbmi, BMI088_GYRO_INT3_INT4_IO_CONF_REG, 0x0C) != BMI088_OK)
+    {
+        return BMI088_ERROR;
+    }
+
+    // 新数据中断使能
+    if (BMI088_GYRO_WriteReg(hbmi, BMI088_GYRO_GYRO_INT_CTRL_REG, 0x80U) != BMI088_OK)
+    {
+        return BMI088_ERROR;
+    }
+    return BMI088_OK;
+}
+
+BMI088_StatusTypeDef BMI088_ClearFlag(BMI088_HandleTypeDef *hbmi,
+                                      uint8_t value)
+{
+    if (hbmi == NULL)
+    {
+        return BMI088_ERROR;
+    }
+    uint8_t int_state = 0;
+    if (value == BMI088_ACC_INT_FLAG)
+    {
+        if (BMI088_ACC_ReadReg(hbmi, BMI088_ACC_INT_STAT_1_REG, &int_state) != BMI088_OK)
+        {
+            return BMI088_ERROR;
+        }
+        return (int_state & 0x80U) ? BMI088_OK : BMI088_ERROR;
+    }
+    else if (value == BMI088_GYRO_INT_FLAG)
+    {
+        if (BMI088_GYRO_ReadReg(hbmi, BMI088_GYRO_INT_STAT_1_REG, &int_state) != BMI088_OK)
+        {
+            return BMI088_ERROR;
+        }
+        return (int_state & 0x80U) ? BMI088_OK : BMI088_ERROR;
+    }
+    else
+    {
+        return BMI088_ERROR;
+    }
 }

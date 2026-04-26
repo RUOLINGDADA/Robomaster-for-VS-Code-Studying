@@ -9,27 +9,38 @@
 #define BMI088_GYRO_CHIPID         0x0FU    /* 官方5.5.1 */
 
 /*========================= 加速度计寄存器 官方5.2 =========================*/
-#define BMI088_ACC_CHIP_ID_REG      0x00U
-#define BMI088_ACC_ERR_REG          0x02U
-#define BMI088_ACC_STATUS_REG       0x03U
-#define BMI088_ACC_DATA_START_REG   0x12U
-#define BMI088_ACC_TEMP_MSB_REG     0x22U
-#define BMI088_ACC_TEMP_LSB_REG     0x23U
-#define BMI088_ACC_CONF_REG         0x40U
-#define BMI088_ACC_RANGE_REG        0x41U
-#define BMI088_ACC_SELF_TEST_REG    0x6DU
-#define BMI088_ACC_PWR_CONF_REG     0x7CU
-#define BMI088_ACC_PWR_CTRL_REG      0x7DU
-#define BMI088_ACC_SOFTRESET_REG    0x7EU
+#define BMI088_ACC_CHIP_ID_REG              0x00U
+#define BMI088_ACC_ERR_REG                  0x02U
+#define BMI088_ACC_STATUS_REG               0x03U
+#define BMI088_ACC_DATA_START_REG           0x12U
+#define BMI088_ACC_TEMP_MSB_REG             0x22U
+#define BMI088_ACC_TEMP_LSB_REG             0x23U
+#define BMI088_ACC_CONF_REG                 0x40U
+#define BMI088_ACC_RANGE_REG                0x41U
+#define BMI088_ACC_SELF_TEST_REG            0x6DU
+#define BMI088_ACC_PWR_CONF_REG             0x7CU
+#define BMI088_ACC_PWR_CTRL_REG             0x7DU
+#define BMI088_ACC_SOFTRESET_REG            0x7EU
+#define BMI088_ACC_INT1_INT2_MAP_DATA_REG   0x58U
+#define BMI088_ACC_INT1_IO_CONF_REG         0x53U
+#define BMI088_ACC_INT_STAT_1_REG           0x1DU
 
 /*========================= 陀螺仪寄存器 官方5.4 =========================*/
-#define BMI088_GYRO_CHIP_ID_REG     0x00U
-#define BMI088_GYRO_DATA_START_REG  0x02U
-#define BMI088_GYRO_RANGE_REG       0x0FU
-#define BMI088_GYRO_BANDWIDTH_REG   0x10U
-#define BMI088_GYRO_LPM1_REG        0x11U
-#define BMI088_GYRO_SOFTRESET_REG   0x14U
-#define BMI088_GYRO_SELF_TEST_REG 0x3CU
+#define BMI088_GYRO_CHIP_ID_REG                 0x00U
+#define BMI088_GYRO_DATA_START_REG              0x02U
+#define BMI088_GYRO_RANGE_REG                   0x0FU
+#define BMI088_GYRO_BANDWIDTH_REG               0x10U
+#define BMI088_GYRO_LPM1_REG                    0x11U
+#define BMI088_GYRO_SOFTRESET_REG               0x14U
+#define BMI088_GYRO_SELF_TEST_REG               0x3CU
+#define BMI088_GYRO_GYRO_INT_CTRL_REG           0x15U
+#define BMI088_GYRO_INT3_INT4_IO_CONF_REG       0x16U
+#define BMI088_GYRO_INT3_INT4_IO_MAP_REG        0x18U
+#define BMI088_GYRO_INT_STAT_1_REG              0x0AU
+
+// 中断标志位
+#define BMI088_ACC_INT_FLAG 0x01U
+#define BMI088_GYRO_INT_FLAG 0x02U
 
 // 驱动状态
 typedef enum
@@ -121,10 +132,14 @@ BMI088_StatusTypeDef BMI088_Init(BMI088_HandleTypeDef *hbmi,
                                  BMI088_AccOdrTypeDef acc_odr,
                                  BMI088_GyroRangeTypeDef gyro_range,
                                  BMI088_GyroBwTypeDef gyro_bw);
-BMI088_StatusTypeDef BMI088_ReadRaw(BMI088_HandleTypeDef *hbmi,
-                                    BMI088_RawDataTypeDef *raw);
+BMI088_StatusTypeDef BMI088_ReadRaw6Axis(BMI088_HandleTypeDef *hbmi,
+        BMI088_RawDataTypeDef *raw);
+BMI088_StatusTypeDef BMI088_ReadTemperature(BMI088_HandleTypeDef *hbmi,
+        BMI088_RawDataTypeDef *raw);
 BMI088_StatusTypeDef BMI088_ConvertRawToPhys(BMI088_HandleTypeDef *hbmi,
         BMI088_RawDataTypeDef *raw,
         BMI088_PhysDataTypeDef *phys);
+BMI088_StatusTypeDef BMI088_ClearFlag(BMI088_HandleTypeDef *hbmi,
+                                      uint8_t value);
 
 #endif

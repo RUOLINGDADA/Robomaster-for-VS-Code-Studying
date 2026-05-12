@@ -19,14 +19,11 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "gpio.h"
-#include "stm32f407xx.h"
-#include "stm32f4xx_hal.h"
-#include "stm32f4xx_hal_gpio.h"
-#include "user_delay.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "key.h"
+#include <sys/_types.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -91,19 +88,23 @@ int main(void) {
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   /* USER CODE BEGIN 2 */
+  KEY_HandleTypeDef *hkey =
+      Key_Create(GPIOA, KEY_Pin, STM32F407, LED_GREEN_GPIO_Port, LED_GREEN_Pin);
+  if (hkey == NULL) {
+    Error_Handler();
+  }
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
-    // HAL_GPIO_TogglePin(GPIOH, LED_B_Pin);
-    // HAL_Delay(1000);
-    // nop_delay_ms(1000);
-    // HAL_GPIO_TogglePin(GPIOH, LED_B_Pin);
-    // nop_delay_ms(1000);
-    // HAL_Delay(1000);
+    Key_Device_Process_Loop(hkey);
+    if (Get_Device_PowerState(hkey)) {
+      LED_Update_Loop(hkey);
+    }
     /* USER CODE END WHILE */
+
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -116,6 +117,7 @@ int main(void) {
 void SystemClock_Config(void) {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
   /** Configure the main internal regulator output voltage
    */
   __HAL_RCC_PWR_CLK_ENABLE();

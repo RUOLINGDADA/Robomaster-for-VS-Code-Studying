@@ -230,12 +230,5 @@ KEY_StatusTypeDef LED_Update_Loop_F407(KEY_HandleTypeDef *hkey) {
        extinguish_time); // 总周期维持在bright_time - extinguish_time内
   HAL_GPIO_WritePin(hkey->device.led_pin_port, hkey->device.led_pin,
                     phase < bright_time ? SET : RESET);
-#ifdef SEGGER_DEBUG
-  if (phase < bright_time) {
-    SEGGER_RTT_printf(0, "Phase:%d SET\r\n", phase);
-  } else {
-    SEGGER_RTT_printf(0, "Phase:%d RESET\r\n", phase);
-  }
-#endif
   return KEY_DEVICE_NORMAL_LOOP;
 }

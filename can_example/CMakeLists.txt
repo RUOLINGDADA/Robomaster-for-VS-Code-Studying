@@ -46,9 +46,10 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     Core/Src/can_ex.c
+    Core/Src/app_c620_demo.c
     Core/RTT/SEGGER_RTT_printf.c
     Core/RTT/SEGGER_RTT.c
-    Core/Src/bsp/C620.c
+    Core/Src/bsp/c620.c
 )
 
 # Add include paths

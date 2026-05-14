@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/ruoling/Desktop/wj/Robomaster-for-VS-Code-Studying/**)",
+      "WebSearch"
+    ]
+  }
+}

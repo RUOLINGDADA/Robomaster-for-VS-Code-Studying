@@ -3,7 +3,7 @@
 #include "bsp/c620.h"
 #include "bsp/device_base.h"
 
-#define APP_C620_ESC_ID 1U
+#define APP_C620_ESC_ID 2U
 #define APP_C620_TX_PERIOD_MS 2U
 #define APP_C620_PHASE_PERIOD_MS 1500U
 #define APP_C620_FEEDBACK_TIMEOUT_MS 500U
@@ -89,8 +89,7 @@ static void App_C620_OnDataUpdate(C620_HandleTypeDef *esc) {
   g_app.last_log_tick = now;
 
   SEGGER_RTT_printf(
-      0,
-      "[ESC%u] angle=%u speed=%d current=%d temp=%u err=%u ext=0x%02X\r\n",
+      0, "[ESC%u] angle=%u speed=%d current=%d temp=%u err=%u ext=0x%02X\r\n",
       esc->esc_id, esc->mechanical_angle, esc->actual_speed,
       esc->actual_current, esc->actual_temp, esc->error.official,
       esc->error.ext);
@@ -169,8 +168,8 @@ void App_C620Demo_Process(void) {
     (void)C620_Process_Loop(g_app.esc);
   }
 
-  if (App_TimeReached(now,
-                      g_app.last_feedback_tick + APP_C620_FEEDBACK_TIMEOUT_MS)) {
+  if (App_TimeReached(now, g_app.last_feedback_tick +
+                               APP_C620_FEEDBACK_TIMEOUT_MS)) {
     g_app.last_feedback_tick = now;
     SEGGER_RTT_printf(0, "[ESC%u] no feedback for %ums\r\n", APP_C620_ESC_ID,
                       APP_C620_FEEDBACK_TIMEOUT_MS);

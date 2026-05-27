@@ -9,9 +9,4 @@
 #include "usart.h"
 #include <stdlib.h>
 
-typedef struct {
-  uint8_t id;
-  char *value;
-} Msg_t;
-
 #endif

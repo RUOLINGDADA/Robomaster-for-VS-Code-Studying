@@ -48,6 +48,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/key.c
     Core/RTT/SEGGER_RTT.c
     Core/RTT/SEGGER_RTT_printf.c
+    Core/Src/freertos/app_msg.c
     Core/Src/freertos/task/led_task.c
     Core/Src/freertos/task/key_task.c
 )

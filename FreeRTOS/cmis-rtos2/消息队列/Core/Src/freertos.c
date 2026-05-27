@@ -25,6 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "app_msg.h"
 #include "key.h"
 #include "key_task.h"
 /* USER CODE END Includes */
@@ -101,6 +102,7 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
   */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
+  AppMsg_Init();
   KEY_HandleTypeDef *hkey = Key_Create(KEY_GPIO_Port, KEY_Pin);
   if (hkey == NULL) {
     Error_Handler();
@@ -121,7 +123,7 @@ void MX_FREERTOS_Init(void) {
 
   /* Create the queue(s) */
   /* creation of usartQueue */
-  usartQueueHandle = osMessageQueueNew (16, sizeof(Msg_t*), &usartQueue_attributes);
+  usartQueueHandle = osMessageQueueNew (APP_MSG_POOL_SIZE, sizeof(AppMsg_t *), &usartQueue_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */

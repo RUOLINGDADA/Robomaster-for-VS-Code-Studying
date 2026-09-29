@@ -1,0 +1,20 @@
+
+
+
+Breakpoint=0x080054F8, State=BP_STATE_DISABLED
+GraphedExpression="(Icap).ave_value", Color=#e56a6f
+GraphedExpression="(Iin).ave_value", Color=#35792b
+GraphedExpression="(Iout).ave_value", Color=#769dda
+OpenDocument="startup_stm32f334x8.s", FilePath="c:/Users/sy7ye/OneDrive/project/Digital Power/MDK-ARM/startup_stm32f334x8.s", Line=167
+OpenToolbar="View", Floating=0, x=0, y=0
+OpenToolbar="Debug", Floating=0, x=1, y=0
+OpenWindow="Disassembly", DockArea=RIGHT, x=0, y=0, w=300, h=203, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0
+OpenWindow="Global Data", DockArea=RIGHT, x=0, y=1, w=300, h=355, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0
+OpenWindow="Data Sampling", DockArea=BOTTOM, x=0, y=0, w=1193, h=328, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0, VisibleTab=0, UniformSampleSpacing=0
+SmartViewPlugin="", Page="", Toolbar="Hidden", Window="SmartView 1"
+TableHeader="Power Sampling", SortCol="None", SortOrder="ASCENDING", VisibleCols=["Index";"Time";"Ch 0"], ColWidths=[100;100;100]
+TableHeader="RegisterSelectionDialog", SortCol="None", SortOrder="ASCENDING", VisibleCols=[], ColWidths=[]
+TableHeader="Global Data", SortCol="Name", SortOrder="ASCENDING", VisibleCols=["Name";"Value";"Location";"Size";"Type";"Scope"], ColWidths=[100;100;102;100;100;100]
+TableHeader="Data Sampling Table", SortCol="None", SortOrder="ASCENDING", VisibleCols=["Index";"Time";" (Icap).ave_value";" (Iin).ave_value";" (Iout).ave_value"], ColWidths=[100;100;100;100;100]
+TableHeader="Data Sampling Setup", SortCol="Min", SortOrder="ASCENDING", VisibleCols=["Expression";"Type";"Value";"Min";"Max";"Average";"# Changes";"Min. Change";"Max. Change"], ColWidths=[118;100;134;134;144;134;110;144;175]
+TableHeader="TargetExceptionDialog", SortCol="Name", SortOrder="ASCENDING", VisibleCols=["Name";"Value";"Address";"Description"], ColWidths=[200;100;100;340]

@@ -87,8 +87,8 @@ bool C610_M2006_IsOnline(const C610_M2006_HandleTypeDef *hmotor) {
 #else
 
 typedef struct {
-  C610_M2006_HandleTypeDef *handle;
-  bool in_use;
+  C610_M2006_HandleTypeDef *handle; /* 静态注册表中对应的设备句柄。 */
+  bool in_use;                      /* true 表示该槽位已被一个句柄占用。 */
 } C610_M2006_SlotTypeDef;
 
 static C610_M2006_SlotTypeDef
@@ -136,11 +136,6 @@ static void C610_M2006_WriteI16Be(uint8_t data[2], int16_t value) {
   const uint16_t raw = (uint16_t)value;
   data[0] = (uint8_t)(raw >> 8U); /* CAN DATA[0] 放高字节。 */
   data[1] = (uint8_t)raw;
-}
-
-static uint32_t C610_M2006_ControlId(uint8_t motor_id) {
-  return motor_id <= 4U ? C610_M2006_CONTROL_ID_LOW
-                         : C610_M2006_CONTROL_ID_HIGH;
 }
 
 static uint8_t C610_M2006_ControlSlot(uint8_t motor_id) {
@@ -280,14 +275,18 @@ bool C610_M2006_HandleRxMessage(
 
   /*
    * 反馈字段是协议定义的 8 字节快照：角度、转速、电流均为大端有符号/无符号
-   * 整数，温度位于 DATA[6]。接收中断只完成解码和时间戳更新，把控制决策留给任务。
+   * 整数，DATA[6] 为空、DATA[7] 为错误码。接收中断只完成解码和时间戳更新，
+   * 把控制决策留给任务。
    */
-  hmotor->feedback.angle_raw = C610_M2006_ReadU16Be(&data[0]);
+  /* 手册规定角度为 13 位 0~8191；屏蔽未定义高位，避免把保留位当角度。 */
+  hmotor->feedback.angle_raw =
+      C610_M2006_ReadU16Be(&data[0]) & (C610_M2006_ENCODER_COUNTS_PER_REV - 1U);
   hmotor->feedback.speed_rpm = C610_M2006_ReadI16Be(&data[2]);
   hmotor->feedback.current_raw = C610_M2006_ReadI16Be(&data[4]);
-  hmotor->feedback.temperature_c = data[6];
+  hmotor->feedback.reserved_raw = data[6]; /* C610 手册明确 DATA[6] 为空。 */
   hmotor->feedback.error_code = data[7];
   hmotor->feedback.last_feedback_tick = HAL_GetTick();
+  hmotor->feedback_received = true;
   hmotor->state = hmotor->output_enabled ? C610_M2006_STATE_RUNNING
                                          : C610_M2006_STATE_ONLINE;
   return true;
@@ -358,10 +357,14 @@ bool C610_M2006_Process(C610_M2006_HandleTypeDef *hmotor,
     return false;
   }
 
-  const uint32_t elapsed = now_tick - hmotor->feedback.last_feedback_tick;
-  if (elapsed > hmotor->config.feedback_timeout_ms) {
+  /* 没有收到过反馈时，last_feedback_tick 默认为 0，不能把启动早期的
+   * 小时间差误认为在线；必须先确认真实 CAN 帧到达。 */
+  if (!hmotor->feedback_received ||
+      now_tick - hmotor->feedback.last_feedback_tick >=
+          hmotor->config.feedback_timeout_ms) {
     hmotor->state = C610_M2006_STATE_OFFLINE;
     hmotor->target_current_raw = 0;
+    hmotor->output_enabled = false;
     return true;
   }
   if (hmotor->state == C610_M2006_STATE_OFFLINE) {
@@ -382,7 +385,7 @@ bool C610_M2006_GetFeedback(const C610_M2006_HandleTypeDef *hmotor,
 }
 
 bool C610_M2006_IsOnline(const C610_M2006_HandleTypeDef *hmotor) {
-  return hmotor != NULL && hmotor->initialized &&
+  return hmotor != NULL && hmotor->initialized && hmotor->feedback_received &&
          hmotor->state != C610_M2006_STATE_OFFLINE &&
          hmotor->state != C610_M2006_STATE_UNINITIALIZED;
 }

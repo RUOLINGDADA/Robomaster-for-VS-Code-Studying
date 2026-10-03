@@ -55,6 +55,20 @@ const osThreadAttr_t task_feed_motor_attributes = {
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal2,
 };
+/* Definitions for task_yaw */
+osThreadId_t task_yawHandle;
+const osThreadAttr_t task_yaw_attributes = {
+  .name = "task_yaw",
+  .stack_size = 384 * 4,
+  .priority = (osPriority_t) osPriorityNormal2,
+};
+/* Definitions for task_pitch */
+osThreadId_t task_pitchHandle;
+const osThreadAttr_t task_pitch_attributes = {
+  .name = "task_pitch",
+  .stack_size = 384 * 4,
+  .priority = (osPriority_t) osPriorityNormal2,
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -62,6 +76,8 @@ const osThreadAttr_t task_feed_motor_attributes = {
 /* USER CODE END FunctionPrototypes */
 
 void task_feed_motor_entry(void *argument);
+void task_yaw_entry(void *argument);
+void task_pitch_entry(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -95,6 +111,12 @@ void MX_FREERTOS_Init(void) {
   /* creation of task_feed_motor */
   task_feed_motorHandle = osThreadNew(task_feed_motor_entry, NULL, &task_feed_motor_attributes);
 
+  /* creation of task_yaw */
+  task_yawHandle = osThreadNew(task_yaw_entry, NULL, &task_yaw_attributes);
+
+  /* creation of task_pitch */
+  task_pitchHandle = osThreadNew(task_pitch_entry, NULL, &task_pitch_attributes);
+
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
@@ -115,12 +137,60 @@ void MX_FREERTOS_Init(void) {
 __weak void task_feed_motor_entry(void *argument)
 {
   /* USER CODE BEGIN task_feed_motor_entry */
+  (void)argument;
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
   /* USER CODE END task_feed_motor_entry */
+}
+
+/* USER CODE BEGIN Header_task_yaw_entry */
+/**
+  * @brief  云台底盘（Yaw/水平轴）任务的 CubeMX 默认弱实现。
+  * @param  argument 任务参数，当前未使用。
+  * @retval None 任务不会返回。
+  *
+  * @note   这里先保留安全空任务，避免用户尚未完成 Yaw 句柄初始化时
+  *         意外给 GM6020 输出电流。后续应在独立任务源文件中提供同名强
+  *         定义，并在任务循环内调用 Gm6020_Process()/Gm6020_Send()。
+  */
+/* USER CODE END Header_task_yaw_entry */
+__weak void task_yaw_entry(void *argument)
+{
+  /* USER CODE BEGIN task_yaw_entry */
+  (void)argument;
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END task_yaw_entry */
+}
+
+/* USER CODE BEGIN Header_task_pitch_entry */
+/**
+  * @brief  发射云台（Pitch/纵向轴）任务的 CubeMX 默认弱实现。
+  * @param  argument 任务参数，当前未使用。
+  * @retval None 任务不会返回。
+  *
+  * @note   Pitch 通常使用 GM6020 反馈 ID 0x206。正式实现时应在本任务
+  *         中使用独立的 Gm6020_HandleTypeDef，并保持输出默认关闭；不能
+  *         复用 Yaw 任务的句柄，否则两个轴的目标电流和限位状态会互相覆盖。
+  */
+/* USER CODE END Header_task_pitch_entry */
+__weak void task_pitch_entry(void *argument)
+{
+  /* USER CODE BEGIN task_pitch_entry */
+  (void)argument;
+  /* Infinite loop */
+  for(;;)
+  {
+    /* 空任务只让出 CPU，不初始化电机、不发送电流。 */
+    osDelay(1);
+  }
+  /* USER CODE END task_pitch_entry */
 }
 
 /* Private application code --------------------------------------------------*/

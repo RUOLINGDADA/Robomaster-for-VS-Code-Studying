@@ -20,7 +20,7 @@
 
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __MAIN_H
-#define __MAIN_H
+#define __MAIN_H /* 防止工程主入口声明被重复包含。 */
 
 #ifdef __cplusplus
 extern "C" {

@@ -19,7 +19,7 @@
 
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __STM32F4xx_IT_H
-#define __STM32F4xx_IT_H
+#define __STM32F4xx_IT_H /* 防止中断声明被重复包含。 */
 
 #ifdef __cplusplus
 extern "C" {

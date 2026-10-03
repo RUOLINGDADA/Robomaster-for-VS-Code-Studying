@@ -11,7 +11,7 @@
   */
 
 #ifndef C610_M2006_H
-#define C610_M2006_H
+#define C610_M2006_H /* 防止同一编译单元重复展开 C610/M2006 接口。 */
 
 #include "stm32f4xx_hal.h"
 
@@ -29,22 +29,27 @@ typedef struct CAN_RxHeaderTypeDef CAN_RxHeaderTypeDef;
 #include <stdbool.h>
 #include <stdint.h>
 
-#define C610_M2006_FRAME_DLC 8U
-#define C610_M2006_MAX_DEVICE_COUNT 8U
-#define C610_M2006_MIN_DEVICE_ID 1U
-#define C610_M2006_MAX_DEVICE_ID 8U
+#define C610_M2006_FRAME_DLC 8U /* C610 反馈和聚合控制帧固定为 8 字节。 */
+#define C610_M2006_MAX_DEVICE_COUNT 8U /* 静态注册表最多保存 8 个电调句柄。 */
+#define C610_M2006_MIN_DEVICE_ID 1U /* RoboMaster 电调编号从 1 开始。 */
+#define C610_M2006_MAX_DEVICE_ID 8U /* C610/M2006 支持的最大电调编号。 */
 
 /* RoboMaster 标准电机协议的聚合控制帧 ID。 */
-#define C610_M2006_CONTROL_ID_LOW 0x200U
-#define C610_M2006_CONTROL_ID_HIGH 0x1FFU
+#define C610_M2006_CONTROL_ID_LOW 0x200U /* ID1~4 使用的聚合控制帧。 */
+#define C610_M2006_CONTROL_ID_HIGH 0x1FFU /* ID5~8 使用的聚合控制帧。 */
 
 /* 反馈帧 ID = 0x200 + 电调 ID，例如 ID=1 时为 0x201。 */
-#define C610_M2006_FEEDBACK_ID_BASE 0x200U
+#define C610_M2006_FEEDBACK_ID_BASE 0x200U /* 反馈 ID = 0x200 + 电调 ID。 */
+#define C610_M2006_ENCODER_COUNTS_PER_REV 8192U /* 反馈机械角度范围 0~8191，对应一圈。 */
 
-/* C610 的电流指令采用有符号原始值；额定上下限需结合实际配置确认。 */
-#define C610_M2006_CURRENT_RAW_MIN (-16384)
-#define C610_M2006_CURRENT_RAW_MAX 16384
-#define C610_M2006_FEEDBACK_TIMEOUT_MS 100U
+/*
+ * 官方手册 `参考文档/markdown/C610_-----------.md` 规定 C610/M2006 控制转矩
+ * 电流范围为 [-10000, 10000] 原始值。这里按该协议范围钳位；不能复用
+ * C620/3508 或 GM6020 的其它型号范围。
+ */
+#define C610_M2006_CURRENT_RAW_MIN (-10000) /* M2006/C610 目标电流原始值下限。 */
+#define C610_M2006_CURRENT_RAW_MAX 10000 /* M2006/C610 目标电流原始值上限。 */
+#define C610_M2006_FEEDBACK_TIMEOUT_MS 100U /* 超过 100 ms 无反馈即视为离线。 */
 
 typedef enum {
   C610_M2006_STATE_UNINITIALIZED = 0,
@@ -55,27 +60,28 @@ typedef enum {
 } C610_M2006_StateTypeDef;
 
 typedef struct {
-  uint16_t angle_raw;
-  int16_t speed_rpm;
-  int16_t current_raw;
-  uint8_t temperature_c;
-  uint8_t error_code;
-  uint32_t last_feedback_tick;
+  uint16_t angle_raw;        /* DATA[0:1] 机械角度，驱动取低 13 位，单位计数。 */
+  int16_t speed_rpm;         /* DATA[2:3] 有符号转速，单位 rpm。 */
+  int16_t current_raw;       /* DATA[4:5] 有符号实际转矩电流原始值。 */
+  uint8_t reserved_raw; /* DATA[6]：官方手册标为空，保留原始值供诊断。 */
+  uint8_t error_code;   /* DATA[7]：官方手册定义的电机错误码。 */
+  uint32_t last_feedback_tick; /* HAL_GetTick() 写入的最近反馈时间，单位 ms。 */
 } C610_M2006_FeedbackTypeDef;
 
 typedef struct {
-  CAN_HandleTypeDef *hcan;
-  uint8_t motor_id;
-  uint32_t feedback_timeout_ms;
+  CAN_HandleTypeDef *hcan;       /* 该电调所在的 HAL CAN 外设句柄。 */
+  uint8_t motor_id;              /* C610 电调 ID，协议有效范围为 1~8。 */
+  uint32_t feedback_timeout_ms;  /* 反馈超过该 HAL 毫秒数未更新即判定离线。 */
 } C610_M2006_ConfigTypeDef;
 
 typedef struct {
-  C610_M2006_ConfigTypeDef config;
-  C610_M2006_FeedbackTypeDef feedback;
-  int16_t target_current_raw;
-  C610_M2006_StateTypeDef state;
-  bool initialized;
-  bool output_enabled;
+  C610_M2006_ConfigTypeDef config; /* Init 时复制的 CAN、ID 和超时配置。 */
+  C610_M2006_FeedbackTypeDef feedback; /* CAN ISR 更新、任务复制读取的反馈数据。 */
+  int16_t target_current_raw;          /* 任务缓存的目标电流原始值，发送前已钳位。 */
+  C610_M2006_StateTypeDef state;       /* 当前在线、运行或禁用状态。 */
+  bool initialized;                    /* true 表示句柄已经加入静态注册表。 */
+  bool output_enabled;                 /* false 时聚合帧对应槽位强制发送零电流。 */
+  volatile bool feedback_received; /* ISR 写入、任务读取；至少收到一帧合法反馈。 */
 } C610_M2006_HandleTypeDef;
 
 /**

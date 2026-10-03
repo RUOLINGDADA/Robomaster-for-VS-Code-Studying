@@ -22,7 +22,7 @@
 
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __STM32F4xx_HAL_CONF_H
-#define __STM32F4xx_HAL_CONF_H
+#define __STM32F4xx_HAL_CONF_H /* 防止 HAL 模块配置被重复包含。 */
 
 #ifdef __cplusplus
  extern "C" {
@@ -35,11 +35,11 @@
 /**
   * @brief This is the list of modules to be used in the HAL driver
   */
-#define HAL_MODULE_ENABLED
+#define HAL_MODULE_ENABLED /* 总 HAL 模块总开关。 */
 
   /* #define HAL_CRYP_MODULE_ENABLED */
 /* #define HAL_ADC_MODULE_ENABLED */
-#define HAL_CAN_MODULE_ENABLED
+#define HAL_CAN_MODULE_ENABLED /* 启用 CAN 外设和 GM6020/C610 驱动完整实现。 */
 /* #define HAL_CRC_MODULE_ENABLED */
 /* #define HAL_CAN_LEGACY_MODULE_ENABLED */
 /* #define HAL_DAC_MODULE_ENABLED */
@@ -63,8 +63,8 @@
 /* #define HAL_SD_MODULE_ENABLED */
 /* #define HAL_MMC_MODULE_ENABLED */
 /* #define HAL_SPI_MODULE_ENABLED */
-#define HAL_TIM_MODULE_ENABLED
-#define HAL_UART_MODULE_ENABLED
+#define HAL_TIM_MODULE_ENABLED /* 启用定时器 HAL。 */
+#define HAL_UART_MODULE_ENABLED /* 启用 UART HAL。 */
 /* #define HAL_USART_MODULE_ENABLED */
 /* #define HAL_IRDA_MODULE_ENABLED */
 /* #define HAL_SMARTCARD_MODULE_ENABLED */
@@ -81,13 +81,13 @@
 /* #define HAL_SPDIFRX_MODULE_ENABLED */
 /* #define HAL_DFSDM_MODULE_ENABLED */
 /* #define HAL_LPTIM_MODULE_ENABLED */
-#define HAL_GPIO_MODULE_ENABLED
-#define HAL_EXTI_MODULE_ENABLED
-#define HAL_DMA_MODULE_ENABLED
-#define HAL_RCC_MODULE_ENABLED
-#define HAL_FLASH_MODULE_ENABLED
-#define HAL_PWR_MODULE_ENABLED
-#define HAL_CORTEX_MODULE_ENABLED
+#define HAL_GPIO_MODULE_ENABLED /* 启用 GPIO HAL。 */
+#define HAL_EXTI_MODULE_ENABLED /* 启用外部中断 HAL。 */
+#define HAL_DMA_MODULE_ENABLED /* 启用 DMA HAL。 */
+#define HAL_RCC_MODULE_ENABLED /* 启用时钟控制 HAL。 */
+#define HAL_FLASH_MODULE_ENABLED /* 启用 Flash HAL。 */
+#define HAL_PWR_MODULE_ENABLED /* 启用电源控制 HAL。 */
+#define HAL_CORTEX_MODULE_ENABLED /* 启用 Cortex 内核 HAL。 */
 
 /* ########################## HSE/HSI Values adaptation ##################### */
 /**
@@ -149,10 +149,10 @@
   */
 #define  VDD_VALUE		      3300U /*!< Value of VDD in mv */
 #define  TICK_INT_PRIORITY            15U   /*!< tick interrupt priority */
-#define  USE_RTOS                     0U
-#define  PREFETCH_ENABLE              1U
-#define  INSTRUCTION_CACHE_ENABLE     1U
-#define  DATA_CACHE_ENABLE            1U
+#define  USE_RTOS                     0U /* HAL 内部不直接绑定 RTOS。 */
+#define  PREFETCH_ENABLE              1U /* 启用 Cortex-M4 指令预取。 */
+#define  INSTRUCTION_CACHE_ENABLE     1U /* 启用指令缓存。 */
+#define  DATA_CACHE_ENABLE            1U /* 启用数据缓存。 */
 
 #define  USE_HAL_ADC_REGISTER_CALLBACKS         0U /* ADC register callback disabled       */
 #define  USE_HAL_CAN_REGISTER_CALLBACKS         0U /* CAN register callback disabled       */
@@ -206,12 +206,12 @@
 /* Section 1 : Ethernet peripheral configuration */
 
 /* MAC ADDRESS: MAC_ADDR0:MAC_ADDR1:MAC_ADDR2:MAC_ADDR3:MAC_ADDR4:MAC_ADDR5 */
-#define MAC_ADDR0   2U
-#define MAC_ADDR1   0U
-#define MAC_ADDR2   0U
-#define MAC_ADDR3   0U
-#define MAC_ADDR4   0U
-#define MAC_ADDR5   0U
+#define MAC_ADDR0   2U /* 以太网 MAC 地址字节 0，当前工程未使用 ETH。 */
+#define MAC_ADDR1   0U /* 以太网 MAC 地址字节 1。 */
+#define MAC_ADDR2   0U /* 以太网 MAC 地址字节 2。 */
+#define MAC_ADDR3   0U /* 以太网 MAC 地址字节 3。 */
+#define MAC_ADDR4   0U /* 以太网 MAC 地址字节 4。 */
+#define MAC_ADDR5   0U /* 以太网 MAC 地址字节 5。 */
 
 /* Definition of the Ethernet driver buffers size and count */
 #define ETH_RX_BUF_SIZE                ETH_MAX_PACKET_SIZE /* buffer size for receive               */
@@ -222,14 +222,14 @@
 /* Section 2: PHY configuration section */
 
 /* DP83848_PHY_ADDRESS Address*/
-#define DP83848_PHY_ADDRESS
+#define DP83848_PHY_ADDRESS /* 默认以太网 PHY 地址占位宏。 */
 /* PHY Reset delay these values are based on a 1 ms Systick interrupt*/
-#define PHY_RESET_DELAY                 0x000000FFU
+#define PHY_RESET_DELAY                 0x000000FFU /* PHY 复位等待循环上限。 */
 /* PHY Configuration delay */
-#define PHY_CONFIG_DELAY                0x00000FFFU
+#define PHY_CONFIG_DELAY                0x00000FFFU /* PHY 配置等待循环上限。 */
 
-#define PHY_READ_TO                     0x0000FFFFU
-#define PHY_WRITE_TO                    0x0000FFFFU
+#define PHY_READ_TO                     0x0000FFFFU /* PHY 读操作超时计数。 */
+#define PHY_WRITE_TO                    0x0000FFFFU /* PHY 写操作超时计数。 */
 
 /* Section 3: Common PHY Registers */
 
@@ -264,7 +264,7 @@
 * Deactivated: CRC code cleaned from driver
 */
 
-#define USE_SPI_CRC                     0U
+#define USE_SPI_CRC                     0U /* SPI CRC 校验默认关闭。 */
 
 /* Includes ------------------------------------------------------------------*/
 /**
@@ -481,11 +481,11 @@
   *         If expr is true, it returns no value.
   * @retval None
   */
-  #define assert_param(expr) ((expr) ? (void)0U : assert_failed((uint8_t *)__FILE__, __LINE__))
+   #define assert_param(expr) ((expr) ? (void)0U : assert_failed((uint8_t *)__FILE__, __LINE__)) /* HAL 参数断言，失败时调用 assert_failed。 */
 /* Exported functions ------------------------------------------------------- */
   void assert_failed(uint8_t* file, uint32_t line);
 #else
-  #define assert_param(expr) ((void)0U)
+   #define assert_param(expr) ((void)0U) /* 关闭 HAL 参数断言时的空操作。 */
 #endif /* USE_FULL_ASSERT */
 
 #ifdef __cplusplus

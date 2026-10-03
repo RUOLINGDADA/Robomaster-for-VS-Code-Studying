@@ -22,6 +22,11 @@
 
 /* USER CODE BEGIN 0 */
 
+#define USART_TX_BUFFER_SIZE 768U /* 中文诊断文本 DMA 缓冲区大小，单位字节。 */
+
+static uint8_t g_usart_tx_buf[USART_TX_BUFFER_SIZE]; /* DMA 发送期间保持不变的唯一共享缓冲区。 */
+static volatile bool g_usart_tx_busy; /* DMA 未完成时为 true，避免覆盖发送内容。 */
+
 /* USER CODE END 0 */
 
 UART_HandleTypeDef huart1;
@@ -148,33 +153,52 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 }
 
 /* USER CODE BEGIN 1 */
-void usart_printf(const char *fmt, ...) {
-  static uint8_t tx_buf[256]; // 单任务下可保留静态，减少栈占用
-  uint8_t len;
+/*
+ * 原子交换只保护“缓冲区所有权”，不会在 vsnprintf 期间关闭中断。
+ * DMA 正在读取时所有任务立即返回 false；DMA 完成后才可以覆盖缓冲区。
+ * 格式化返回的是 int，超过缓冲区则整条拒绝，不截断 UTF-8 中文字符。
+ */
+static bool Usart_TryVPrintf(const char *fmt, va_list ap) {
+  if (fmt == NULL || __get_IPSR() != 0U ||
+      __atomic_exchange_n(&g_usart_tx_busy, true, __ATOMIC_ACQUIRE)) {
+    return false;
+  }
+  if (huart1.gState != HAL_UART_STATE_READY) {
+    __atomic_store_n(&g_usart_tx_busy, false, __ATOMIC_RELEASE);
+    return false;
+  }
+  const int length = vsnprintf((char *)g_usart_tx_buf,
+                              sizeof(g_usart_tx_buf), fmt, ap);
+  if (length <= 0 || length >= (int)sizeof(g_usart_tx_buf)) {
+    __atomic_store_n(&g_usart_tx_busy, false, __ATOMIC_RELEASE);
+    return false;
+  }
+  if (HAL_UART_Transmit_DMA(&huart1, g_usart_tx_buf,
+                           (uint16_t)length) != HAL_OK) {
+    __atomic_store_n(&g_usart_tx_busy, false, __ATOMIC_RELEASE);
+    return false;
+  }
+  return true; /* 所有权保留到 DMA 完成回调；不能在这里提前释放。 */
+}
+
+bool usart_try_printf(const char *fmt, ...) {
   va_list ap;
-
-  // 等待上一次UART传输完成
-  while (huart1.gState != HAL_UART_STATE_READY) {
-  }
-
-  // 安全格式化字符串
   va_start(ap, fmt);
-  len = vsnprintf((char *)tx_buf, sizeof(tx_buf), fmt, ap);
+  const bool accepted = Usart_TryVPrintf(fmt, ap);
   va_end(ap);
+  return accepted;
+}
 
-  // 严谨处理返回值
-  if (len <= 0) {
-    return; // 格式化出错，直接返回
-  }
-  if (len >= sizeof(tx_buf)) {
-    len = sizeof(tx_buf) - 1; // 截断保护
-  }
+void usart_printf(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  (void)Usart_TryVPrintf(fmt, ap); /* 旧 void 接口忙时丢弃；重要提示使用 try 接口重试。 */
+  va_end(ap);
+}
 
-  // HAL_UART_Transmit(&huart1, tx_buf, len, 99999999);
-  //  启动DMA传输
-  if (HAL_UART_Transmit_DMA(&huart1, tx_buf, len) != HAL_OK) {
-    Error_Handler();
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+  if (huart == &huart1) {
+    __atomic_store_n(&g_usart_tx_busy, false, __ATOMIC_RELEASE);
   }
 }
 /* USER CODE END 1 */
-

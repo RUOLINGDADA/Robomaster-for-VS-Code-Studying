@@ -11,18 +11,18 @@
   */
 
 #ifndef TASK_FEED_MOTOR_COMMAND_H
-#define TASK_FEED_MOTOR_COMMAND_H /* 防止配置接口被重复包含。 */
+#define TASK_FEED_MOTOR_COMMAND_H /* 防止配置接口被重复包含（避免结构体重复定义）。 */
 
 #include <stdint.h>
 
 typedef struct {
-  uint8_t motor_id;                 /* C610 电调编号，1 对应反馈 ID 0x201。 */
-  uint32_t up_time_ms;              /* 上弹阶段持续时间。 */
-  uint32_t stop_time_ms;            /* 每次换向前的零电流缓冲时间。 */
-  uint32_t down_time_ms;            /* 下弹阶段持续时间。 */
-  uint32_t log_period_ms;           /* 周期诊断日志最小间隔。 */
-  int16_t up_current_raw;            /* 上弹方向目标电流原始值。 */
-  int16_t down_current_raw;          /* 下弹方向目标电流原始值。 */
+  uint8_t motor_id;                 /* C610 电调编号，1 对应反馈 ID 0x201（ID 决定聚合帧槽位）。 */
+  uint32_t up_time_ms;              /* 上弹阶段持续时间，单位 ms（正方向保持多久）。 */
+  uint32_t stop_time_ms;            /* 每次换向前的零电流缓冲时间，单位 ms（先卸力再反向）。 */
+  uint32_t down_time_ms;            /* 下弹阶段持续时间，单位 ms（负方向保持多久）。 */
+  uint32_t log_period_ms;           /* 周期诊断日志最小间隔，单位 ms（避免串口被周期输出占满）。 */
+  int16_t up_current_raw;            /* 上弹方向目标电流原始值（C610 协议原始量）。 */
+  int16_t down_current_raw;          /* 下弹方向目标电流原始值（通常为负值）。 */
 } FeedMotor_CommandConfigTypeDef;
 
 /**
@@ -33,4 +33,4 @@ typedef struct {
  */
 void FeedMotorCommand_GetDefault(FeedMotor_CommandConfigTypeDef *config);
 
-#endif /* TASK_FEED_MOTOR_COMMAND_H */
+#endif /* TASK_FEED_MOTOR_COMMAND_H（防止配置接口被重复包含） */

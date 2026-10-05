@@ -2,6 +2,8 @@
   ******************************************************************************
   * @file    task_feed_motor_control.c
   * @brief   供弹电机测试状态机实现。
+  *
+  * 通俗理解：每次调用只检查“这一阶段是否到时间”，到时间才换到下一阶段，期间不阻塞任务。
   ******************************************************************************
   */
 
@@ -11,6 +13,7 @@
 
 #include <stddef.h>
 
+/* 切换阶段并记录起点；起点必须只在换相时更新，否则计时会被每周期清零。 */
 static void FeedMotorControl_SetPhase(FeedMotor_ControlTypeDef *control,
                                       FeedMotor_PhaseTypeDef phase,
                                       uint32_t now_tick) {
@@ -38,6 +41,7 @@ void FeedMotorControl_SetWait(FeedMotor_ControlTypeDef *control,
   }
 }
 
+/* 将配置的毫秒时长转换为 FreeRTOS Tick；不转换会让时钟频率改变后测试时间失真。 */
 static uint32_t FeedMotorControl_DurationTicks(
     FeedMotor_PhaseTypeDef phase,
     const FeedMotor_CommandConfigTypeDef *config) {
@@ -59,9 +63,10 @@ static uint32_t FeedMotorControl_DurationTicks(
   }
 
   /*
-   * 配置文件面向人使用毫秒，但阶段起点保存的是 FreeRTOS Tick。
+   * 配置文件面向人使用毫秒，但阶段起点保存的是 FreeRTOS Tick（内部计时使用系统节拍）。
    * 不能直接比较两个单位；即使当前 Tick=1000 Hz，也要保留转换，
    * 否则将来调整 configTICK_RATE_HZ 后，上弹/下弹时间会整体改变。
+   * 通俗理解：先把人看得懂的毫秒换成系统真正计数的 Tick，计时才不会跑偏。
    */
   return (uint32_t)pdMS_TO_TICKS(duration_ms);
 }
@@ -78,12 +83,12 @@ bool FeedMotorControl_Update(FeedMotor_ControlTypeDef *control,
     return false;
   }
   if (control->phase == FEED_MOTOR_PHASE_WAIT_FEEDBACK) {
-    /* 第一帧反馈到达后才开始计时，避免把等待时间算进上弹阶段。 */
+    /* 第一帧反馈到达后才开始计时（等待电机上线的时间不算进上弹阶段）。 */
     FeedMotorControl_SetPhase(control, FEED_MOTOR_PHASE_UP, now_tick);
     return true;
   }
 
-  /* 无符号差值可正确处理短时间间隔内的 Tick 回绕。 */
+  /* 无符号差值可正确处理短时间间隔内的 Tick 回绕（计数器归零也能继续计时）。 */
   const uint32_t elapsed_tick = now_tick - control->phase_start_tick;
   const uint32_t duration_tick = FeedMotorControl_DurationTicks(control->phase,
                                                                  config);
@@ -91,6 +96,7 @@ bool FeedMotorControl_Update(FeedMotor_ControlTypeDef *control,
     return false;
   }
 
+  /* 上弹/下弹之间必须经过停止阶段，先释放旧方向的力矩再换向，减少机械冲击。 */
   switch (control->phase) {
   case FEED_MOTOR_PHASE_UP:
     FeedMotorControl_SetPhase(control, FEED_MOTOR_PHASE_STOP_AFTER_UP,

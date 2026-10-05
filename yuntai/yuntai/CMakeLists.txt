@@ -46,26 +46,28 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/app/gimbal/gimbal_axis.c
     Core/Src/app/gimbal/gimbal_control.c
-    Core/Src/app/gimbal/gimbal_protection.c
     Core/Src/algorithm/pid/pid.c
     Core/Src/algorithm/ramp/ramp.c
     Core/Src/algorithm/filter/low_pass_filter.c
     Core/Src/bsp/c610_m2006/c610_m2006.c
     Core/Src/bsp/gm6020/gm6020.c
     Core/Src/bsp/can/can_rx_dispatch.c
+    Core/Src/bsp/dbus/dbus.c
     Core/Src/bsp/c610_m2006/test_c610_m2006_self_cycle.c
     Core/Src/bsp/gm6020/test_gm6020_calibration.c
     Core/Src/bsp/gm6020/test_gm6020_angle_loop.c
     Core/Src/task/task_feed_motor/task_feed_motor.c
     Core/Src/task/task_feed_motor/task_feed_motor_command.c
     Core/Src/task/task_feed_motor/task_feed_motor_control.c
-    Core/Src/task/task_feed_motor/task_feed_motor_protection.c
     Core/Src/task/task_feed_motor/task_feed_motor_runtime.c
     Core/Src/task/task_yaw/task_yaw.c
     Core/Src/task/task_yaw/task_yaw_command.c
     Core/Src/task/task_yaw/task_yaw_runtime.c
     Core/Src/task/task_pitch/task_pitch.c
+    Core/Src/task/task_pitch/task_pitch_command.c
     Core/Src/task/task_pitch/task_pitch_runtime.c
+    Core/Src/task/task_dbus/task_dbus.c
+    Core/Src/task/task_dbus/task_dbus_runtime.c
 )
 
 # Add include paths

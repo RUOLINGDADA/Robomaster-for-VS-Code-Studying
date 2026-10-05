@@ -6,6 +6,7 @@
   * HAL 只允许工程提供一个 HAL_CAN_RxFifo0MsgPendingCallback。这里把同一帧
   * 依次交给 GM6020 和 C610/M2006 驱动；每个驱动自行按 CAN ID 过滤。函数
   * 运行在 ISR 中，所以不能打印串口、调用阻塞 API 或执行复杂控制算法。
+  * 通俗理解：FIFO 只能由这里取一次，取出的同一帧再分别递给各驱动，避免后取的模块拿不到数据。
   ******************************************************************************
   */
 
@@ -26,7 +27,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
     return;
   }
 
-  /* 先取一次帧，再把同一份数据交给各驱动，避免某个驱动把别人的帧取走。 */
+  /* 先取一次帧，再把同一份数据交给各驱动（驱动自己判断这帧是不是自己的）。 */
   (void)Gm6020_HandleRxMessage(hcan, &rx_header, data);
   (void)C610_M2006_HandleRxMessage(hcan, &rx_header, data);
 }

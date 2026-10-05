@@ -13,10 +13,11 @@
 - 构建：CMake + Ninja 预设，工程名为 `yuntai`。
 - 生成代码包含 `main.c`、`freertos.c`、GPIO/CAN/UART 初始化和 FreeRTOS 任务创建；业务强入口通过 CMake 从 `bsp/`、`algorithm/` 和 `task/` 目录接入，`freertos.c` 仅保留弱兜底。
 - 目前应把新增业务代码放入 `Core/Inc`、`Core/Src` 的 `bsp/`、`algorithm/`、`app/<feature>/` 或 `task/<task_name>/` 子目录，并接入 CMake。
-- 当前已接入 `bsp/gm6020` GM6020 驱动、通用 PID/Ramp/低通算法和 `task_yaw` 模块；`.ioc` 已创建 `task_yaw`（云台底盘水平轴，反馈 ID `0x205`）和 `task_pitch`（发射云台纵向轴，反馈 ID `0x206`）。Yaw 使用抽象相对速度命令、实机标定的连续角度范围、级联闭环和可自动恢复的堵转保护；`task_pitch` 已接入独立配置的通用标定和固定目标测试，默认只读标定；正式输入尚未接入，关闭测试后仍持续零输出。
+- 当前已接入 `bsp/gm6020` GM6020 驱动、通用 PID/Ramp/低通算法和 `task_yaw` 模块；`.ioc` 已创建 `task_yaw`（云台底盘水平轴，反馈 ID `0x205`）和 `task_pitch`（发射云台纵向轴，反馈 ID `0x206`）。Yaw 使用抽象相对速度命令、实机标定的连续角度范围、级联闭环和可自动恢复的堵转保护；`task_pitch` 已接入独立配置的通用标定、固定目标测试和 DBUS 正式命令入口，默认仍只读标定，未完成标定时零输出。
 - `task_feed_motor` 已按与 Yaw 相同的任务目录方式拆为入口、命令、控制、保护和运行时；硬件调参时调用驱动同级的非阻塞上弹/下弹自循环。阶段/日志配置以毫秒保存，使用前转换为 FreeRTOS Tick。C610 只有收到至少一帧合法反馈后才报告在线，避免初始化零时间戳造成假在线。
 - 永久硬件测试只保留 `bsp/gm6020` 的手动角度标定、固定目标角度环和 `bsp/c610_m2006` 的供弹自循环；纯协议、PID、Ramp、回绕和限幅验证使用临时脚本，不建立 `Core/Inc/test` 或 `Core/Src/test`。
 - `app/gimbal/gimbal_axis.c` 提供 Yaw/Pitch 共用的 GM6020 快照、角度/速度环、Ramp 和保护组合；两个任务只保存自己的轴句柄、配置和测试状态。固定角度测试日志复用运行时同一周期快照。
+- DBUS 已接入 USART3 PC11（100000、9B+偶校验、DMA1 Stream1），`task_dbus` 每 2 ms 发布右摇杆 CH0/CH1 到 Yaw/Pitch；掉线 100 ms 零电流，回中保持目标，拨杆/鼠标/键盘仅解码诊断。
 
 ## 目标架构
 

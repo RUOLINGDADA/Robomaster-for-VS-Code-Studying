@@ -19,7 +19,7 @@
 /* USER CODE END Header */
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __CAN_H__
-#define __CAN_H__ /* 防止 CubeMX CAN 接口被重复包含。 */
+#define __CAN_H__
 
 #ifdef __cplusplus
 extern "C" {

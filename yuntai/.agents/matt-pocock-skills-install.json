@@ -1,0 +1,193 @@
+{
+  "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills",
+  "sourceCommit": "24fe0ef7737efae15c87225755e9f6f5965e4888",
+  "installedAt": "2026-10-05T17:16:12.7080532+08:00",
+  "count": 37,
+  "skills": [
+    {
+      "name": "ask-matt",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\ask-matt",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\ask-matt"
+    },
+    {
+      "name": "code-review",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\code-review",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\code-review"
+    },
+    {
+      "name": "codebase-design",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\codebase-design",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\codebase-design"
+    },
+    {
+      "name": "diagnosing-bugs",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\diagnosing-bugs",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\diagnosing-bugs"
+    },
+    {
+      "name": "domain-modeling",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\domain-modeling",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\domain-modeling"
+    },
+    {
+      "name": "grill-with-docs",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\grill-with-docs",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\grill-with-docs"
+    },
+    {
+      "name": "implement",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\implement",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\implement"
+    },
+    {
+      "name": "implement-spec",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\implement-spec",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\implement-spec"
+    },
+    {
+      "name": "improve-codebase-architecture",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\improve-codebase-architecture",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\improve-codebase-architecture"
+    },
+    {
+      "name": "pr",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\pr",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\pr"
+    },
+    {
+      "name": "prototype",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\prototype",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\prototype"
+    },
+    {
+      "name": "research",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\research",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\research"
+    },
+    {
+      "name": "retro",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\retro",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\retro"
+    },
+    {
+      "name": "setup-matt-pocock-skills",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\setup-matt-pocock-skills",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\setup-matt-pocock-skills"
+    },
+    {
+      "name": "tdd",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\tdd",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\tdd"
+    },
+    {
+      "name": "to-spec",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\to-spec",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\to-spec"
+    },
+    {
+      "name": "to-tickets",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\to-tickets",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\to-tickets"
+    },
+    {
+      "name": "triage",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\triage",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\triage"
+    },
+    {
+      "name": "wayfinder",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\wayfinder",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\wayfinder"
+    },
+    {
+      "name": "wizard",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\engineering\\wizard",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\wizard"
+    },
+    {
+      "name": "claude-handoff",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\in-progress\\claude-handoff",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\claude-handoff"
+    },
+    {
+      "name": "loop-me",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\in-progress\\loop-me",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\loop-me"
+    },
+    {
+      "name": "setup-ts-deep-modules",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\in-progress\\setup-ts-deep-modules",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\setup-ts-deep-modules"
+    },
+    {
+      "name": "writing-beats",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\in-progress\\writing-beats",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\writing-beats"
+    },
+    {
+      "name": "writing-fragments",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\in-progress\\writing-fragments",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\writing-fragments"
+    },
+    {
+      "name": "writing-shape",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\in-progress\\writing-shape",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\writing-shape"
+    },
+    {
+      "name": "git-guardrails-claude-code",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\misc\\git-guardrails-claude-code",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\git-guardrails-claude-code"
+    },
+    {
+      "name": "migrate-to-shoehorn",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\misc\\migrate-to-shoehorn",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\migrate-to-shoehorn"
+    },
+    {
+      "name": "scaffold-exercises",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\misc\\scaffold-exercises",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\scaffold-exercises"
+    },
+    {
+      "name": "setup-pre-commit",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\misc\\setup-pre-commit",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\setup-pre-commit"
+    },
+    {
+      "name": "grill-me",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\productivity\\grill-me",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\grill-me"
+    },
+    {
+      "name": "grilling",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\productivity\\grilling",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\grilling"
+    },
+    {
+      "name": "handoff",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\productivity\\handoff",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\handoff"
+    },
+    {
+      "name": "teach",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\productivity\\teach",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\teach"
+    },
+    {
+      "name": "to-questionnaire",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\productivity\\to-questionnaire",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\to-questionnaire"
+    },
+    {
+      "name": "wait-what",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\productivity\\wait-what",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\wait-what"
+    },
+    {
+      "name": "writing-for-agents",
+      "source": "C:\\Users\\zhoujinyuan\\Desktop\\skills\\skills\\productivity\\writing-for-agents",
+      "installed": "C:\\Users\\zhoujinyuan\\Desktop\\wj\\Robomaster-for-VS-Code-Studying\\yuntai\\.agents\\skills\\writing-for-agents"
+    }
+  ]
+}

@@ -19,7 +19,7 @@
 /* USER CODE END Header */
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __DMA_H__
-#define __DMA_H__ /* 防止 CubeMX DMA 声明被重复包含。 */
+#define __DMA_H__
 
 #ifdef __cplusplus
 extern "C" {

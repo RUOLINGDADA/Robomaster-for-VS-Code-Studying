@@ -4,7 +4,7 @@
 
 供弹任务只管理本项目唯一的 M2006 供弹电机，默认 C610 电调 ID 为 1，反馈帧为 `0x201`。硬件调参模式由驱动同级的 C610 自循环函数负责上弹/停止/下弹/停止；正式路径等待真实供弹命令接入，没有凭空加入未经台架标定的堵转算法。
 
-任务结构与 Yaw 保持一致：入口只做周期调度，硬件测试函数负责调参阶段，命令/控制/保护文件保留正式命令接入边界，运行时组合 C610、保护和日志。关闭硬件测试后，当前因尚未接入真实供弹命令而保持零输出。
+任务结构与 Yaw 保持一致：入口只做周期调度，硬件测试函数负责调参阶段，命令/控制文件保留正式命令接入边界，运行时组合 C610 和日志。关闭硬件测试后，当前因尚未接入真实供弹命令而保持零输出。
 
 ## 文件职责
 
@@ -15,10 +15,8 @@ Core/Inc/task/task_feed_motor/task_feed_motor_command.h
 Core/Src/task/task_feed_motor/task_feed_motor_command.c     # 正式命令默认配置
 Core/Inc/task/task_feed_motor/task_feed_motor_control.h
 Core/Src/task/task_feed_motor/task_feed_motor_control.c     # 阶段状态机和目标电流
-Core/Inc/task/task_feed_motor/task_feed_motor_protection.h
-Core/Src/task/task_feed_motor/task_feed_motor_protection.c # 反馈失联 fail-safe
 Core/Inc/task/task_feed_motor/task_feed_motor_runtime.h
-Core/Src/task/task_feed_motor/task_feed_motor_runtime.c     # 驱动/控制/保护组合
+Core/Src/task/task_feed_motor/task_feed_motor_runtime.c     # 驱动/控制组合
 ```
 
 ## 状态流程
@@ -106,13 +104,13 @@ STOP_AFTER_DOWN (0)
 - `freertos.c` 中的 `__weak task_feed_motor_entry()` 只做安全兜底；目录中的强定义由顶层
   `CMakeLists.txt` 显式加入后覆盖它。重新生成 CubeMX 文件时不要把业务状态机放回生成文件。
 
-配置、阶段状态机、保护和硬件组合分别通过公开头文件提供接口；其它任务不得直接修改
+配置、阶段状态机和硬件组合分别通过公开头文件提供接口；反馈新鲜度由 C610 驱动层负责，其它任务不得直接修改
 `FeedMotor_RuntimeTypeDef` 内部字段。以后接入遥控器时，应在命令层增加输入适配，不要把
 遥控协议和 C610 CAN 帧解析混在任务入口。
 
 ## 验证
 
-静态检查应确认入口、命令、控制、保护和运行时源文件全部加入 CMake；ARM GCC `-Wall -Wextra -fsyntax-only` 可验证接口和类型。上弹方向、电流安全性、机械卡弹和最终保护阈值必须在可急停台架实测。
+静态检查应确认入口、命令、控制和运行时源文件全部加入 CMake；ARM GCC `-Wall -Wextra -fsyntax-only` 可验证接口和类型。上弹方向、电流安全性、机械卡弹和温升必须在可急停台架实测。
 
 ## 硬件调参测试
 
@@ -124,4 +122,4 @@ STOP_AFTER_DOWN (0)
 验证不再建立永久测试文件。
 
 默认命令配置直接复用硬件测试头文件中的阶段和电流宏，后续正式命令接入时沿用已确认
-的调参值；当前正式路径因为尚未接入真实供弹命令仍保持零输出。
+的调参值；当前正式路径因为尚未接入真实供弹命令仍保持零输出，反馈超时也由 C610 驱动层清零。

@@ -87,8 +87,8 @@ C610_M2006_SendAll(&hcan1);
 
 - `C610_M2006_RxFifoCallback` 可在 HAL CAN FIFO 中断回调中调用，必须保持短小，不打印、不阻塞、不调用普通 FreeRTOS API。
 - `C610_M2006_SetCurrent`、`C610_M2006_Process`、`C610_M2006_SendAll` 应在普通任务或主循环调用。
-- `feedback_received` 由 CAN ISR 写入、任务读取，声明为 `volatile` 只保证每次访问都从内存取值；它不是多字段反馈快照，角度/速度/电流的一致性仍需上层快照策略。
-- 句柄中的反馈字段可能在中断更新、在任务读取。`C610_M2006_GetFeedback` 提供结构体复制，但复制多字段不是天然原子快照；高精度控制需要由上层增加临界区或队列策略。
+- `feedback_received` 由 CAN ISR 写入、任务读取；`feedback_sequence` 用奇偶序列号包住反馈字段更新，任务通过 `C610_M2006_GetFeedback` 只接受前后相同的偶数序列号，避免角度/速度/电流来自不同帧。
+- `C610_M2006_GetFeedback` 连续多次遇到 ISR 更新会返回 `false`，调用者应保留安全默认值或下一周期重试，不能使用不完整结构体。
 - `C610_M2006_SendAll` 只聚合同一个 `CAN_HandleTypeDef` 的设备，避免把 CAN1 和 CAN2 的目标电流放到同一帧。
 
 ## 安全行为

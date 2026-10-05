@@ -2,18 +2,20 @@
   ******************************************************************************
   * @file    task_feed_motor.h
   * @brief   M2006 供弹电机任务的入口声明。
+  *
+  * 通俗理解：这个文件只声明任务从哪里开始，阶段和驱动调用放在同目录的运行时模块里。
   ******************************************************************************
   */
 
 #ifndef TASK_FEED_MOTOR_H
-#define TASK_FEED_MOTOR_H /* 防止供弹任务入口声明被重复包含。 */
+#define TASK_FEED_MOTOR_H /* 防止供弹任务入口声明被重复包含（避免同一声明出现两次）。 */
 
 /**
- * @brief  唯一 M2006 供弹电机的 FreeRTOS 任务入口。
+ * @brief  唯一 M2006 供弹电机的 FreeRTOS 任务入口（按固定周期推进控制）。
  * @param  argument CubeMX 传入的任务参数，当前未使用。
- * @retval None 任务初始化成功后永不返回；初始化失败时进入安全等待。
+ * @retval None 任务初始化成功后永不返回；初始化失败时进入安全等待（持续零输出）。
  * @note   只能由任务上下文执行。CAN 接收在 ISR 中完成，串口诊断在任务中限频执行。
  */
 void task_feed_motor_entry(void *argument);
 
-#endif /* TASK_FEED_MOTOR_H */
+#endif /* TASK_FEED_MOTOR_H（防止供弹任务入口声明被重复包含） */

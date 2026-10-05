@@ -54,3 +54,4 @@ void usart_printf(const char *fmt, ...);
 #endif
 
 #endif /* __USART_H__ */
+

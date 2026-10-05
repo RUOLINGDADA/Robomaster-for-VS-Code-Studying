@@ -2,6 +2,9 @@
   ******************************************************************************
   * @file    pid.c
   * @brief   离散 PID、积分限幅和抗积分饱和实现。
+  *
+  * 通俗理解：比例项负责“现在纠偏”，积分项负责“补长期欠账”，微分项负责
+  * “看变化趋势”；输出顶到上下限时暂缓继续累积积分，避免解除限幅后猛冲。
   ******************************************************************************
   */
 
@@ -9,6 +12,7 @@
 
 #include <stddef.h>
 
+/* 限制中间项或最终输出；积分和输出分开限幅，避免历史误差绕过电流安全边界。 */
 static float Pid_Clamp(float value, float minimum, float maximum) {
   if (value < minimum) {
     return minimum;
@@ -55,15 +59,13 @@ float Pid_Update(Pid_ControllerTypeDef *controller, float error, float dt_s) {
   }
 
   if (!controller->initialized) {
-    /* 第一次调用不使用从零开始的巨大微分尖峰。 
-    如果不做这个，第一次调用的时候，previous_error=0，误差突然很大，微分项瞬间爆炸，产生巨大冲击。
-    第一次直接把上一次误差赋值为当前 error，微分 = 0 */
+    /* 首次没有真实的上一帧误差；若拿默认 0 做差分，启动瞬间会制造假的微分尖峰。 */
     controller->previous_error = error;
     controller->initialized = true;
   }
-  //误差变化率
+  /* 微分项看误差变化率；dt_s 必须是真实周期，否则任务抖动会被当成快速运动。 */
   const float derivative = (error - controller->previous_error) / dt_s;
-  //先计算后限幅
+  /* 先计算候选积分，再限幅（避免历史误差超过允许范围）。 */
   const float next_integral = Pid_Clamp(
       controller->integral + controller->ki * error * dt_s,
       controller->integral_min, controller->integral_max);
@@ -73,17 +75,15 @@ float Pid_Update(Pid_ControllerTypeDef *controller, float error, float dt_s) {
       Pid_Clamp(unsaturated, controller->output_min, controller->output_max);
 
   /*
-    积分饱和现象：电机被挡住，误差长期很大，积分一直累加，就算误差反向了，积分值很大，输出不能马上回来，会严重超调。
-    抗积分饱和逻辑:
-    输出已经满功率的时候，不再继续往同一个方向堆积分
+   * 积分饱和：电机被挡住时误差长期存在，积分会越堆越大，解除阻挡后就会过冲。
+   * 这里记录输出是否已经顶到上限或下限（控制器已经没有更多“力气”可用）。
    */
   const bool saturated_high = unsaturated > controller->output_max;
   const bool saturated_low = unsaturated < controller->output_min;
   /*
-    1. 如果输出没有顶到上下限 → 正常更新积分
-    2. 如果输出顶上限（饱和高）：只有误差反向（error<0）的时候，才允许积分更新（让积分往回降）
-    3. 如果输出顶下限（饱和低）：只有误差反向（error>0）的时候，才允许积分更新
-  */
+   * 没有饱和时正常保存积分；已经顶到上限时只接受负误差，顶到下限时只接受正误差
+   * （通俗理解：只允许积分把输出从“顶住的方向”拉回来，不允许继续往墙上加力）。
+   */
   if ((!saturated_high && !saturated_low) ||
       (saturated_high && error < 0.0f) ||
       (saturated_low && error > 0.0f)) {

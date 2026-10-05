@@ -94,8 +94,9 @@ int main(void)
   MX_DMA_Init();
   MX_CAN1_Init();
   MX_USART1_UART_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  //CAN过滤器配置
+  /* CAN 过滤器配置（当前掩码全零，FIFO0 接收所有标准帧，具体 ID 由驱动分发层再筛选）。 */
   CAN_FilterTypeDef filter_cfg = {0};
   filter_cfg.FilterBank = 0;
   filter_cfg.FilterMode = CAN_FILTERMODE_IDMASK;
@@ -107,9 +108,12 @@ int main(void)
   filter_cfg.FilterFIFOAssignment = CAN_RX_FIFO0;
   filter_cfg.FilterActivation = ENABLE;
   filter_cfg.SlaveStartFilterBank = 14;
-  HAL_CAN_ConfigFilter(&hcan1, &filter_cfg);
-  HAL_CAN_Start(&hcan1);
-  HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING);
+  if (HAL_CAN_ConfigFilter(&hcan1, &filter_cfg) != HAL_OK ||
+      HAL_CAN_Start(&hcan1) != HAL_OK ||
+      HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
+    /* CAN 初始化失败时保持 Error_Handler 的安全停机，不让任务在未过滤/未启动总线上运行。 */
+    Error_Handler();
+  }
   /* USER CODE END 2 */
 
   /* Init scheduler */

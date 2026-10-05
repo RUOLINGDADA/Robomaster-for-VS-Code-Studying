@@ -19,7 +19,7 @@
 /* USER CODE END Header */
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __GPIO_H__
-#define __GPIO_H__ /* 防止 CubeMX GPIO 声明被重复包含。 */
+#define __GPIO_H__
 
 #ifdef __cplusplus
 extern "C" {

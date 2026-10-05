@@ -2,6 +2,8 @@
   ******************************************************************************
   * @file    test_gm6020_calibration.c
   * @brief   GM6020 双轴共用的只读机械角度标定实现。
+  *
+  * 通俗理解：标定期间始终发零电流，操作者用手移动云台，日志只负责把角度读出来。
   ******************************************************************************
   */
 
@@ -11,8 +13,8 @@
 
 #include <stddef.h>
 
-#define GM6020_CALIBRATION_LOG_PERIOD_MS 200U /* 连续角度日志间隔，单位 ms。 */
-#define GM6020_CALIBRATION_PROMPT_PERIOD_MS 5000U /* 操作提示重发间隔，单位 ms。 */
+#define GM6020_CALIBRATION_LOG_PERIOD_MS 200U /* 连续角度日志最短间隔，单位 HAL ms（避免串口刷屏）。 */
+#define GM6020_CALIBRATION_PROMPT_PERIOD_MS 5000U /* 操作提示重发间隔，单位 HAL ms（提醒操作者记录边界）。 */
 
 void Gm6020_TestCalibration_Run(
     Gm6020_HandleTypeDef *motor,
@@ -39,7 +41,7 @@ void Gm6020_TestCalibration_Run(
   Gm6020_SnapshotTypeDef snapshot = {0};
   const bool snapshot_valid = Gm6020_GetSnapshot(motor, &snapshot);
 
-  /* 标定永远零输出；即使快照失败也要清零旧目标，避免掉线后残留电流。 */
+  /* 标定永远零输出；即使快照失败也要清零旧目标（避免掉线后残留电流）。 */
   (void)Gm6020_SetOutputEnabled(motor, false);
   (void)Gm6020_SetCurrent(motor, 0);
   const bool can_submitted = Gm6020_Send(motor);

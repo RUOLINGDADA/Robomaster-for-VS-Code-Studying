@@ -4,6 +4,7 @@
   * @brief   C610/M2006 供弹电机硬件自循环调参实现。
   *
   * 状态机每次任务调用只执行一个控制周期。反馈超时或首帧尚未到达时，
+  * 通俗理解：它像一个有人值守的往返测试，先确认在线，再上弹、卸力、下弹、卸力。
   * 无条件发送零电流；阶段换向之间插入停止时间，防止机械惯性和旧方向
   * 电流叠加造成冲击。
   ******************************************************************************
@@ -26,15 +27,16 @@ typedef enum {
 } C610_TestPhaseTypeDef;
 
 typedef struct {
-  C610_TestPhaseTypeDef phase; /* 当前阶段。 */
-  uint32_t phase_start_ms; /* 当前阶段起点，单位 HAL 毫秒。 */
-  uint32_t last_log_ms; /* 上次诊断日志时间，单位 HAL 毫秒。 */
-  bool initialized; /* true 表示静态测试状态已建立。 */
-  bool log_started; /* true 表示已经输出过第一条周期日志。 */
+  C610_TestPhaseTypeDef phase; /* 当前阶段（决定输出正电流、零电流还是负电流）。 */
+  uint32_t phase_start_ms; /* 当前阶段起点，单位 HAL 毫秒（阶段计时从这里开始）。 */
+  uint32_t last_log_ms; /* 上次诊断日志时间，单位 HAL 毫秒（只用于日志限频）。 */
+  bool initialized; /* true 表示静态测试状态已建立（首次调用完成一次性初始化）。 */
+  bool log_started; /* true 表示已经输出过第一条周期日志（DMA 忙时保留 false，下一周期重试）。 */
 } C610_TestStateTypeDef;
 
 static C610_TestStateTypeDef g_c610_test_state;
 
+/* 将测试状态转成日志文本，避免把枚举数字直接输出给调参人员。 */
 static const char *C610_TestPhaseName(C610_TestPhaseTypeDef phase) {
   switch (phase) {
   case C610_TEST_PHASE_UP:
@@ -51,6 +53,7 @@ static const char *C610_TestPhaseName(C610_TestPhaseTypeDef phase) {
   }
 }
 
+/* 返回当前阶段持续时间；停止阶段单独保留，换向前先卸力再反转。 */
 static uint32_t C610_TestPhaseDurationMs(C610_TestPhaseTypeDef phase) {
   switch (phase) {
   case C610_TEST_PHASE_UP:
@@ -68,6 +71,7 @@ static uint32_t C610_TestPhaseDurationMs(C610_TestPhaseTypeDef phase) {
 
 static void C610_TestSetPhase(C610_TestPhaseTypeDef phase,
                               uint32_t now_ms) {
+  /* 只在真正换相时重置起点；每周期重复赋值会让阶段永远到不了超时。 */
   if (g_c610_test_state.phase == phase) {
     return;
   }

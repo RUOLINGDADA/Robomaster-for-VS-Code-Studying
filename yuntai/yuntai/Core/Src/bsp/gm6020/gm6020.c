@@ -1,7 +1,7 @@
 /**
   ******************************************************************************
   * @file    gm6020.c
-  * @brief   GM6020 CAN 协议、连续角度和限位保护实现。
+  * @brief   GM6020 CAN 协议、连续角度和只读边界状态实现。
   *
   * 反馈数据使用大端排列：DATA[0:1] 为 13 位单圈角度，DATA[2:3] 为
   * 转速，DATA[4:5] 为电流，DATA[6] 为温度。发送时把目标电流放入
@@ -15,26 +15,42 @@
 
 #if defined(HAL_CAN_MODULE_ENABLED)
 
-/* Yaw 与 Pitch 共享同一组电流控制帧；不同反馈 ID 对应不同的两字节槽位。 */
+/* Yaw 与 Pitch 共享同一组电流控制帧；不同反馈 ID 对应不同的两字节槽位（两个任务不能各发一帧覆盖对方）。 */
 static Gm6020_HandleTypeDef *g_gm6020_handles[GM6020_MAX_DEVICE_COUNT];
 
 /*
- * 单核 STM32 上用很短的 PRIMASK 临界区保护驱动状态及聚合发送。
+ * 单核 STM32 上用很短的 PRIMASK 临界区保护驱动状态及聚合发送（避免 ISR 与任务同时改槽位）。
  * 保存旧 PRIMASK 后恢复原状态，不能无条件开中断；临界区内不等待、不打印。
  * CAN 发送仅提交最多两帧到邮箱，没有总线完成等待。
  */
+/* 保存并屏蔽中断，保护注册表、反馈状态和聚合帧的短临界区。 */
 static uint32_t Gm6020_EnterCritical(void) {
   const uint32_t previous = __get_PRIMASK();
   __disable_irq();
   __DMB();
   return previous;
 }
+
+/* 恢复进入临界区前的中断状态；无条件开中断会破坏调用者原本屏蔽 ISR 的上下文。 */
 static void Gm6020_ExitCritical(uint32_t previous) {
   __DMB();
   __set_PRIMASK(previous);
 }
 
+/* 任务/发送路径共用的新鲜反馈门；即使上层漏调 Process，也不能继续发旧电流。 */
+static bool Gm6020_FeedbackFresh(const Gm6020_HandleTypeDef *hmotor,
+                                 uint32_t now_ms) {
+  if (hmotor == NULL || !hmotor->angle_initialized ||
+      hmotor->state == GM6020_STATE_OFFLINE ||
+      hmotor->state == GM6020_STATE_UNINITIALIZED) {
+    return false;
+  }
+  const uint32_t age_ms = now_ms - hmotor->feedback.last_feedback_tick;
+  return age_ms > INT32_MAX || age_ms < hmotor->config.feedback_timeout_ms;
+}
 
+
+/* 判断句柄仍在静态注册表中；避免释放/未初始化句柄继续访问共享 CAN 槽位。 */
 static bool Gm6020_IsRegistered(const Gm6020_HandleTypeDef *hmotor) {
   if (hmotor == NULL || !hmotor->initialized) {
     return false;
@@ -47,6 +63,7 @@ static bool Gm6020_IsRegistered(const Gm6020_HandleTypeDef *hmotor) {
   return false;
 }
 
+/* 按 CAN 实例和反馈 ID 查找句柄；只接受注册表中的唯一设备，避免串到另一轴。 */
 static Gm6020_HandleTypeDef *Gm6020_Find(CAN_HandleTypeDef *hcan,
                                          uint16_t feedback_id) {
   for (uint8_t i = 0U; i < GM6020_MAX_DEVICE_COUNT; i++) {
@@ -59,17 +76,20 @@ static Gm6020_HandleTypeDef *Gm6020_Find(CAN_HandleTypeDef *hcan,
   return NULL;
 }
 
+/* 按 GM6020 大端协议读取有符号 16 位字段；不能直接转指针，否则 STM32 小端会交换字节。 */
 static int16_t Gm6020_ReadI16Be(const uint8_t data[2]) {
-  /* CAN 协议是高字节在前；不能直接把地址转换成 int16_t*，否则会受 STM32 小端影响。 */
+  /* CAN 协议是高字节在前；不能直接把地址转换成 int16_t*（STM32 小端会把字节顺序读反）。 */
   return (int16_t)(((uint16_t)data[0] << 8U) | data[1]);
 }
 
+/* 按大端读取单圈编码器原始值，调用者随后再屏蔽到 13 位有效范围。 */
 static uint16_t Gm6020_ReadU16Be(const uint8_t data[2]) {
   return (uint16_t)(((uint16_t)data[0] << 8U) | data[1]);
 }
 
 static int32_t Gm6020_SignedAngleDelta(uint16_t current_raw,
                                       uint16_t reference_raw) {
+  /* 把环形单圈差值折叠到最短路径；这里只适用于相邻帧真实运动不足半圈。 */
   int32_t delta = (int32_t)current_raw - (int32_t)reference_raw;
   if (delta > (int32_t)(GM6020_ENCODER_COUNTS_PER_REV / 2U)) {
     delta -= (int32_t)GM6020_ENCODER_COUNTS_PER_REV;
@@ -79,26 +99,20 @@ static int32_t Gm6020_SignedAngleDelta(uint16_t current_raw,
   return delta;
 }
 
+/* 将有符号电流按 CAN 大端写入一个两字节槽位；先转无符号只为保留补码位型。 */
 static void Gm6020_WriteI16Be(uint8_t data[2], int16_t value) {
   const uint16_t raw = (uint16_t)value;
-  data[0] = (uint8_t)(raw >> 8U); /* 电流控制帧要求高字节在前。 */
+  data[0] = (uint8_t)(raw >> 8U); /* 电流控制帧要求高字节在前（先放数值的高 8 位）。 */
   data[1] = (uint8_t)raw;
 }
 
+/* 检查是否配置了有效机械范围；未标定范围用哨兵值表示，不能参与比较。 */
 static bool Gm6020_LimitsEnabled(const Gm6020_HandleTypeDef *hmotor) {
   return hmotor->config.mechanical_min_raw != GM6020_ANGLE_LIMIT_DISABLED_MIN ||
          hmotor->config.mechanical_max_raw != GM6020_ANGLE_LIMIT_DISABLED_MAX;
 }
 
-static void Gm6020_StopAtLimit(Gm6020_HandleTypeDef *hmotor,
-                               Gm6020_LimitTypeDef limit) {
-  hmotor->limit = limit;
-  hmotor->target_current_raw = 0;
-  hmotor->output_enabled = false; /* 限位后必须真正发送零电流，而不是只改状态。 */
-  hmotor->state = limit == GM6020_LIMIT_MIN ? GM6020_STATE_LIMIT_MIN
-                                             : GM6020_STATE_LIMIT_MAX;
-}
-
+/* 用相邻帧最短差展开单圈计数；连续坐标才能直接做限位和位移判断。 */
 static void Gm6020_UpdateContinuousAngle(Gm6020_HandleTypeDef *hmotor,
                                          uint16_t angle_raw) {
   if (!hmotor->angle_initialized) {
@@ -106,44 +120,48 @@ static void Gm6020_UpdateContinuousAngle(Gm6020_HandleTypeDef *hmotor,
       /*
        * 标定中心是连续坐标，反馈角度却是单圈值。取相对中心的最短回绕
        * 差值，可以在 8191->0 时仍得到正确的连续角度。启动位置与中心的
-       * 差值必须小于半圈；这不要求机构的总机械行程小于半圈。
+       * 差值必须小于半圈；这不要求机构的总机械行程小于半圈（只限制首帧对齐）。
        */
+       /* 以标定中心作为连续坐标起点；不用首帧单圈值，才能让标定边界仍保持同一条线。 */
       const int32_t delta = Gm6020_SignedAngleDelta(
           angle_raw, hmotor->config.angle_reference_single_raw);
       hmotor->feedback.angle_total_raw =
           hmotor->config.angle_reference_total_raw + delta;
     } else {
-      /* 未完成标定时保留旧行为：首帧单圈值作为临时连续角度起点。 */
+      /* 未完成标定时保留旧行为：首帧单圈值作为临时连续角度起点（只适合观察，不代表真实机械零点）。 */
       hmotor->feedback.angle_total_raw = (int32_t)angle_raw;
     }
     hmotor->angle_initialized = true;
     return;
   }
 
-  /* 后续帧只比较相邻单圈值，避免把编码器回绕误判成大角度跳变。 */
+  /* 后续帧只累加相邻单圈的最短差，得到连续总角度；单圈角度在 8191→0 回绕，直接比较会把正常跨圈当成大跳变。 */
   const int32_t delta =
       Gm6020_SignedAngleDelta(angle_raw, hmotor->feedback.angle_raw);
   hmotor->feedback.angle_total_raw += delta;
 }
 
+/* 只报告当前连续角度所在的几何边界；输出方向由上层命令过滤决定。 */
 static void Gm6020_CheckAngleLimit(Gm6020_HandleTypeDef *hmotor) {
-  if (!Gm6020_LimitsEnabled(hmotor) || !hmotor->angle_initialized ||
-      hmotor->limit != GM6020_LIMIT_NONE) {
+  if (!Gm6020_LimitsEnabled(hmotor) || !hmotor->angle_initialized) {
+    hmotor->limit = GM6020_LIMIT_NONE;
     return;
   }
-
-  if (hmotor->feedback.angle_total_raw <= hmotor->config.mechanical_min_raw &&
-      hmotor->target_current_raw < 0) {
-    Gm6020_StopAtLimit(hmotor, GM6020_LIMIT_MIN);
-  } else if (hmotor->feedback.angle_total_raw >=
-             hmotor->config.mechanical_max_raw && hmotor->target_current_raw > 0) {
-    Gm6020_StopAtLimit(hmotor, GM6020_LIMIT_MAX);
+  if (hmotor->feedback.angle_total_raw <= hmotor->config.mechanical_min_raw) {
+    hmotor->limit = GM6020_LIMIT_MIN;
+  } else if (hmotor->feedback.angle_total_raw >= hmotor->config.mechanical_max_raw) {
+    hmotor->limit = GM6020_LIMIT_MAX;
+  } else {
+    hmotor->limit = GM6020_LIMIT_NONE;
   }
 }
 
+/* 在临界区内校验配置并注册句柄；注册失败时清零，避免留下看似初始化成功的对象。 */
 static bool Gm6020_InitLocked(Gm6020_HandleTypeDef *hmotor,
                  const Gm6020_ConfigTypeDef *config) {
   if (hmotor == NULL || config == NULL || config->hcan == NULL ||
+      (config->current_sign != 1 && config->current_sign != -1) ||
+      (config->speed_sign != 1 && config->speed_sign != -1) ||
       config->feedback_id < GM6020_FEEDBACK_ID_MIN ||
       config->feedback_id > GM6020_FEEDBACK_ID_MAX ||
       Gm6020_Find(config->hcan, config->feedback_id) != NULL ||
@@ -173,6 +191,7 @@ static bool Gm6020_InitLocked(Gm6020_HandleTypeDef *hmotor,
   return true;
 }
 
+/* 在已进入临界区时移除注册表项并清空句柄，防止 ISR 再找到半释放对象。 */
 static bool Gm6020_DeInitLocked(Gm6020_HandleTypeDef *hmotor) {
   if (!Gm6020_IsRegistered(hmotor)) {
     return false;
@@ -188,40 +207,22 @@ static bool Gm6020_DeInitLocked(Gm6020_HandleTypeDef *hmotor) {
 }
 
 bool Gm6020_SetCurrent(Gm6020_HandleTypeDef *hmotor, int16_t current_raw) {
-  if (!Gm6020_IsRegistered(hmotor)) {
-    return false;
-  }
-  if (current_raw < GM6020_CURRENT_RAW_MIN) {
-    current_raw = GM6020_CURRENT_RAW_MIN;
-  } else if (current_raw > GM6020_CURRENT_RAW_MAX) {
-    current_raw = GM6020_CURRENT_RAW_MAX;
-  }
+  if (!Gm6020_IsRegistered(hmotor)) return false;
+  if (current_raw < GM6020_CURRENT_RAW_MIN) current_raw = GM6020_CURRENT_RAW_MIN;
+  if (current_raw > GM6020_CURRENT_RAW_MAX) current_raw = GM6020_CURRENT_RAW_MAX;
   const uint32_t previous = Gm6020_EnterCritical();
-  if (current_raw != 0 && hmotor->limit != GM6020_LIMIT_NONE) {
-    Gm6020_ExitCritical(previous);
-    return false;
-  }
   hmotor->target_current_raw = current_raw;
-  Gm6020_CheckAngleLimit(hmotor);
-  const bool accepted = current_raw == 0 || hmotor->limit == GM6020_LIMIT_NONE;
   Gm6020_ExitCritical(previous);
-  return accepted;
+  return true;
 }
 
 bool Gm6020_SetOutputEnabled(Gm6020_HandleTypeDef *hmotor, bool enabled) {
-  if (!Gm6020_IsRegistered(hmotor)) {
-    return false;
-  }
+  if (!Gm6020_IsRegistered(hmotor)) return false;
   const uint32_t previous = Gm6020_EnterCritical();
-  hmotor->output_enabled = enabled && hmotor->angle_initialized &&
-                           hmotor->state != GM6020_STATE_OFFLINE &&
-                           hmotor->limit == GM6020_LIMIT_NONE;
+  hmotor->output_enabled = enabled && Gm6020_FeedbackFresh(hmotor, HAL_GetTick());
   if (!hmotor->output_enabled) {
     hmotor->target_current_raw = 0;
-    if (hmotor->limit == GM6020_LIMIT_NONE &&
-        hmotor->state != GM6020_STATE_OFFLINE) {
-      hmotor->state = GM6020_STATE_DISABLED;
-    }
+    if (hmotor->state != GM6020_STATE_OFFLINE) hmotor->state = GM6020_STATE_DISABLED;
   } else if (hmotor->state == GM6020_STATE_ONLINE) {
     hmotor->state = GM6020_STATE_RUNNING;
   }
@@ -240,29 +241,13 @@ bool Gm6020_SetMechanicalLimit(Gm6020_HandleTypeDef *hmotor,
   hmotor->config.mechanical_min_raw = min_angle_raw;
   hmotor->config.mechanical_max_raw = max_angle_raw;
   hmotor->limit = GM6020_LIMIT_NONE;
-  hmotor->output_enabled = false; /* 重新标定后仍需显式重新使能，避免突然转动。 */
+  hmotor->output_enabled = false; /* 重新标定后仍需显式重新使能，避免突然转动（清除边界不等于恢复输出）。 */
   hmotor->target_current_raw = 0;
   hmotor->state = GM6020_STATE_DISABLED;
   Gm6020_ExitCritical(previous);
   return true;
 }
 
-bool Gm6020_ClearAngleLimit(Gm6020_HandleTypeDef *hmotor) {
-  if (!Gm6020_IsRegistered(hmotor) ||
-      (hmotor->limit != GM6020_LIMIT_MIN &&
-       hmotor->limit != GM6020_LIMIT_MAX)) {
-    return false;
-  }
-
-  const uint32_t previous = Gm6020_EnterCritical();
-  /* 清除限位只解除驱动锁，不自动恢复输出；上层还要重新检查方向和命令。 */
-  hmotor->limit = GM6020_LIMIT_NONE;
-  hmotor->output_enabled = false;
-  hmotor->target_current_raw = 0;
-  hmotor->state = GM6020_STATE_DISABLED;
-  Gm6020_ExitCritical(previous);
-  return true;
-}
 
 bool Gm6020_HandleRxMessage(CAN_HandleTypeDef *hcan,
                             const CAN_RxHeaderTypeDef *rx_header,
@@ -279,7 +264,7 @@ bool Gm6020_HandleRxMessage(CAN_HandleTypeDef *hcan,
   if (hmotor == NULL) {
     return false;
   }
-  /* 序列号为奇数表示 ISR 正在写快照；任务读者会避开这一时段。 */
+  /* 序列号为奇数表示 ISR 正在写快照；任务读者会避开这一时段（只接受前后相同的偶数序号）。 */
   hmotor->feedback_sequence++;
   __DMB();
 
@@ -290,13 +275,11 @@ bool Gm6020_HandleRxMessage(CAN_HandleTypeDef *hcan,
   hmotor->feedback.speed_rpm = Gm6020_ReadI16Be(&data[2]);
   hmotor->feedback.current_raw = Gm6020_ReadI16Be(&data[4]);
   hmotor->feedback.temperature_c = data[6];
-  hmotor->feedback.reserved_raw = data[7]; /* 手册未定义该保留字节，原样保存供诊断。 */
+  hmotor->feedback.reserved_raw = data[7]; /* 手册未定义该保留字节，原样保存供诊断（不参与控制）。 */
   hmotor->feedback.last_feedback_tick = HAL_GetTick();
-  if (hmotor->limit == GM6020_LIMIT_NONE) {
-    hmotor->state = hmotor->output_enabled ? GM6020_STATE_RUNNING
-                                           : GM6020_STATE_ONLINE;
-    Gm6020_CheckAngleLimit(hmotor);
-  }
+  hmotor->state = hmotor->output_enabled ? GM6020_STATE_RUNNING
+                                         : GM6020_STATE_ONLINE;
+  Gm6020_CheckAngleLimit(hmotor);
   __DMB();
   hmotor->feedback_sequence++;
   return true;
@@ -312,6 +295,7 @@ bool Gm6020_RxFifoCallback(CAN_HandleTypeDef *hcan, uint32_t rx_fifo) {
   return Gm6020_HandleRxMessage(hcan, &rx_header, data);
 }
 
+/* 在临界区内重建并提交完整聚合帧；跨任务分别写槽位会把另一轴的新值和旧值拼在一起。 */
 static bool Gm6020_SendLocked(Gm6020_HandleTypeDef *hmotor) {
   if (!Gm6020_IsRegistered(hmotor) ||
       HAL_CAN_GetTxMailboxesFreeLevel(hmotor->config.hcan) == 0U) {
@@ -322,27 +306,29 @@ static bool Gm6020_SendLocked(Gm6020_HandleTypeDef *hmotor) {
   uint8_t high_data[GM6020_FRAME_DLC] = {0};
   bool low_used = false;
   bool high_used = false;
+  const uint32_t now_ms = HAL_GetTick();
   /*
    * GM6020 手册把电流控制分成两条标准帧：0x1FE 承载 ID 1~4，
    * 0x2FE 承载 ID 5~7。每次发送都重新聚合所有已注册句柄，避免
-   * Yaw 和 Pitch 两个任务分别写帧时把另一个电机的槽位误清零。
+   * Yaw 和 Pitch 两个任务分别写帧时把另一个电机的槽位误清零（每次按注册表重新聚合）。
    */
   for (uint8_t i = 0U; i < GM6020_MAX_DEVICE_COUNT; i++) {
     Gm6020_HandleTypeDef *registered = g_gm6020_handles[i];
     if (registered == NULL || registered->config.hcan != hmotor->config.hcan) {
       continue;
     }
-    const int16_t current = registered->output_enabled
+    const int16_t current = registered->output_enabled &&
+                                    Gm6020_FeedbackFresh(registered, now_ms)
                                 ? registered->target_current_raw
                                 : 0;
     const uint8_t motor_index = (uint8_t)(registered->config.feedback_id -
                                           GM6020_FEEDBACK_ID_MIN);
     if (motor_index < 4U) {
-      /* ID 1~4 在 0x1FE 中依次占 DATA[0:1]、[2:3]、[4:5]、[6:7]。 */
+      /* ID 1~4 在 0x1FE 中依次占 DATA[0:1]、[2:3]、[4:5]、[6:7]（每个 ID 两字节）。 */
       Gm6020_WriteI16Be(&low_data[2U * motor_index], current);
       low_used = true;
     } else {
-      /* ID 5~7 在 0x2FE 中从 DATA[0:1] 重新编号，不能写到数组越界处。 */
+      /* ID 5~7 在 0x2FE 中从 DATA[0:1] 重新编号，不能写到数组越界处（高帧只有 3 个槽位）。 */
       const uint8_t high_slot = (uint8_t)(motor_index - 4U);
       Gm6020_WriteI16Be(&high_data[2U * high_slot], current);
       high_used = true;
@@ -378,7 +364,7 @@ static bool Gm6020_SendLocked(Gm6020_HandleTypeDef *hmotor) {
   return low_used || high_used;
 }
 
-/* 聚合帧构建与提交必须处于同一临界区，防止任务切换提交旧帧。 */
+/* 聚合帧构建与提交必须处于同一临界区，防止任务切换提交旧帧（避免 Yaw/Pitch 槽位不一致）。 */
 bool Gm6020_Send(Gm6020_HandleTypeDef *hmotor) {
   const uint32_t previous = Gm6020_EnterCritical();
   const bool submitted = Gm6020_SendLocked(hmotor);
@@ -407,7 +393,15 @@ bool Gm6020_Process(Gm6020_HandleTypeDef *hmotor, uint32_t now_tick) {
   }
   const uint32_t previous = Gm6020_EnterCritical();
   const uint32_t elapsed = now_tick - hmotor->feedback.last_feedback_tick;
-  /* ISR 可在任务取得 now_tick 后到达；稍晚时间戳不能误判成超时。 */
+  /* ISR 可在任务取得 now_tick 后到达；稍晚时间戳不能误判成超时（回绕差值按安全值处理）。 */
+  /*
+    举个场景你就懂了：
+    1. 任务刚执行完 now_tick = HAL_GetTick()，拿到了当前时间
+    2. 就在这时，CAN 中断来了，更新了 last_feedback_tick，新的时间戳比 now_tick 还要新
+    3. 中断结束回到任务，再算 elapsed = 旧的now_tick - 新的last_feedback_tick
+    4. 因为是无符号数，减出来会变成一个接近 2^32 的超大值
+    如果不加这个判断，这个超大值会直接大于 100ms，误判成电机超时掉线。
+  */
   const bool timed_out = elapsed <= INT32_MAX &&
                         elapsed >= hmotor->config.feedback_timeout_ms;
   if (!hmotor->angle_initialized || timed_out) {
@@ -430,7 +424,7 @@ bool Gm6020_GetSnapshot(const Gm6020_HandleTypeDef *hmotor,
   /*
    * CAN ISR 写入反馈期间序列号为奇数。复制前后各读一次序列号，只有两次
    * 相同且为偶数才接受结果。这样不会把角度来自新帧、速度来自旧帧的内容
-   * 交给位置环；失败时调用者应保持零输出或沿用上一份安全状态。
+   * 交给位置环；失败时调用者应保持零输出或沿用上一份安全状态（不能使用半帧数据）。
    */
   for (uint8_t retry = 0U; retry < 4U; retry++) {
     const uint32_t sequence_before = hmotor->feedback_sequence;
@@ -446,10 +440,17 @@ bool Gm6020_GetSnapshot(const Gm6020_HandleTypeDef *hmotor,
     snapshot->output_enabled = hmotor->output_enabled;
     const uint32_t age_ms = HAL_GetTick() - snapshot->feedback.last_feedback_tick;
     snapshot->online = snapshot->feedback_received &&
+                       snapshot->state != GM6020_STATE_OFFLINE &&
+                       snapshot->state != GM6020_STATE_UNINITIALIZED &&
                        (age_ms > INT32_MAX ||
                         age_ms < hmotor->config.feedback_timeout_ms);
     __DMB();
+    /* 读取后再次检查序列号，确认复制期间没有被 ISR 改写。 */
     const uint32_t sequence_after = hmotor->feedback_sequence;
+    /*
+      1. 前后序列号完全相等：说明从开始复制到复制结束，中断一次都没来过，数据全程没被修改过
+      2. 序列号还是偶数：确认数据是完整写完的状态，不是写了一半的
+    */
     if (sequence_before == sequence_after &&
         (sequence_after & 1U) == 0U) {
       return true;
@@ -479,13 +480,12 @@ Gm6020_LimitTypeDef Gm6020_GetLimit(const Gm6020_HandleTypeDef *hmotor) {
 
 #else
 
-/* CAN 未启用时保留失败桩，让工程可以先生成和阅读模块；接入 CAN 后编译上方实现。 */
+/* CAN 未启用时保留失败桩，让工程可以先生成和阅读模块；接入 CAN 后编译上方实现（桩不会驱动硬件）。 */
 bool Gm6020_Init(Gm6020_HandleTypeDef *h, const Gm6020_ConfigTypeDef *c) { (void)h; (void)c; return false; }
 bool Gm6020_DeInit(Gm6020_HandleTypeDef *h) { (void)h; return false; }
 bool Gm6020_SetCurrent(Gm6020_HandleTypeDef *h, int16_t c) { (void)h; (void)c; return false; }
 bool Gm6020_SetOutputEnabled(Gm6020_HandleTypeDef *h, bool e) { (void)h; (void)e; return false; }
 bool Gm6020_SetMechanicalLimit(Gm6020_HandleTypeDef *h, int32_t min, int32_t max) { (void)h; (void)min; (void)max; return false; }
-bool Gm6020_ClearAngleLimit(Gm6020_HandleTypeDef *h) { (void)h; return false; }
 bool Gm6020_HandleRxMessage(CAN_HandleTypeDef *h, const CAN_RxHeaderTypeDef *r, const uint8_t d[GM6020_FRAME_DLC]) { (void)h; (void)r; (void)d; return false; }
 bool Gm6020_RxFifoCallback(CAN_HandleTypeDef *h, uint32_t f) { (void)h; (void)f; return false; }
 bool Gm6020_Send(Gm6020_HandleTypeDef *h) { (void)h; return false; }
@@ -496,3 +496,5 @@ bool Gm6020_IsOnline(const Gm6020_HandleTypeDef *h) { (void)h; return false; }
 Gm6020_LimitTypeDef Gm6020_GetLimit(const Gm6020_HandleTypeDef *h) { (void)h; return GM6020_LIMIT_NONE; }
 
 #endif
+
+

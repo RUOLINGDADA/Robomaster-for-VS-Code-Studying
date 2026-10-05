@@ -2,6 +2,8 @@
   ******************************************************************************
   * @file    test_gm6020_angle_loop.c
   * @brief   双轴固定角度上板调参适配，不创建或复制第二套控制器。
+  *
+  * 通俗理解：测试只提供一个固定目标，PID、Ramp 和软件边界过滤仍使用正式实现。
   ******************************************************************************
   */
 #include "bsp/gm6020/test_gm6020_angle_loop.h"
@@ -9,7 +11,7 @@
 #include <math.h>
 #include <stddef.h>
 
-#define GM6020_ANGLE_TEST_DEFAULT_LOG_PERIOD_MS 200U /* 未指定日志参数时使用的间隔 ms。 */
+#define GM6020_ANGLE_TEST_DEFAULT_LOG_PERIOD_MS 200U /* 未指定日志参数时使用的间隔，单位 ms（避免串口刷屏）。 */
 
 void Gm6020_TestAngleLoop_Run(
     Gm6020_HandleTypeDef *motor,
@@ -34,7 +36,7 @@ void Gm6020_TestAngleLoop_Run(
       calibration->min_angle_raw == configured->min_angle_raw &&
       calibration->max_angle_raw == configured->max_angle_raw;
   /*
-   * 在转换为 int32_t 前检查范围与 NaN，避免用户宏数值过大触发未定义转换。
+   * 在转换为 int32_t 前检查范围与 NaN，避免用户宏数值过大触发未定义转换（越界直接零输出）。
    * 角度转换使用 double 完成，保留负数/小数目标，最终四舍五入到一个计数。
    */
   const double requested_raw = (double)calibration->center_angle_raw +
@@ -50,13 +52,14 @@ void Gm6020_TestAngleLoop_Run(
   }
   const int32_t target_raw = (int32_t)round(requested_raw);
   /*
-   * 标定无效、目标越界、反馈掉线均由正式运行时检查并记录零输出周期。
+   * 标定无效、目标越界、反馈掉线均由正式运行时检查并记录零输出周期（测试不能绕过安全链）。
+   * 通俗理解：测试参数不合格就停机，不会绕过正式安全检查。
    * 运行时仅调用一次 Gm6020_GetSnapshot；日志直接复用 axis->cycle。
    */
   GimbalAxis_RunFixedTarget(axis, target_raw, now_ms, dt_ms);
   const uint32_t log_period_ms = test->log_period_ms != 0U
       ? test->log_period_ms : GM6020_ANGLE_TEST_DEFAULT_LOG_PERIOD_MS;
-  if (axis->event_name != NULL || !test->log_started ||
+  if (!test->log_started ||
       now_ms - test->last_log_ms >= log_period_ms) {
     if (GimbalAxis_TryLog(axis, test->axis_name, 0)) {
       test->last_log_ms = now_ms;
@@ -64,3 +67,4 @@ void Gm6020_TestAngleLoop_Run(
     }
   }
 }
+

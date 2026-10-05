@@ -2,6 +2,8 @@
   ******************************************************************************
   * @file    task_feed_motor_runtime.c
   * @brief   供弹电机运行时组合实现。
+  *
+  * 通俗理解：这里把反馈检查、阶段状态和 CAN 发送串成一个完整周期。
   ******************************************************************************
   */
 
@@ -14,6 +16,7 @@
 
 #include <stddef.h>
 
+/* 只从本周期复制的反馈和运行时状态打印；日志限频不能阻塞控制或改写 DMA 缓冲区。 */
 static void FeedMotorRuntime_Log(FeedMotor_RuntimeTypeDef *runtime,
                                  const C610_M2006_FeedbackTypeDef *feedback,
                                  bool online,
@@ -23,7 +26,7 @@ static void FeedMotorRuntime_Log(FeedMotor_RuntimeTypeDef *runtime,
     return;
   }
 
-  /* 日志配置是毫秒；限频比较使用任务 Tick，必须先统一单位。 */
+  /* 日志配置是毫秒；限频比较使用任务 Tick，必须先统一单位（不能直接相减）。 */
   const uint32_t log_period_tick =
       (uint32_t)pdMS_TO_TICKS(runtime->command.log_period_ms);
   if (now_tick - runtime->last_log_tick < log_period_tick) {
@@ -78,24 +81,22 @@ void FeedMotor_RuntimeRunCycle(FeedMotor_RuntimeTypeDef *runtime,
   (void)C610_M2006_Process(&runtime->motor, now_ms);
   const bool online = C610_M2006_IsOnline(&runtime->motor);
   C610_M2006_FeedbackTypeDef feedback = {0};
-  (void)C610_M2006_GetFeedback(&runtime->motor, &feedback);
-
-  const FeedMotor_ProtectionInputTypeDef protection_input = {
-      .feedback_online = online,
-  };
-  FeedMotorProtection_Update(&protection_input, &runtime->protection);
+  const bool feedback_valid = C610_M2006_GetFeedback(&runtime->motor, &feedback);
 
   /*
-   * 正式供弹命令适配层尚未接入。即使反馈在线，也不能把测试配置当成
+   * 正式供弹命令适配层尚未接入（当前没有上层命令来源）。即使反馈在线，也不能把测试配置当成
    * 正式命令继续驱动电机；正式路径当前明确保持零输出，防止关闭测试宏
    * 后意外重新执行旧的上弹/下弹自循环。未来的遥控器或上层命令应在这里
-   * 经过 FeedMotorControl/Protection 后再设置目标电流。
+   * 经过 FeedMotorControl 后再设置目标电流。
+   * 通俗理解：关闭测试模式后默认仍然安全停机，不会偷偷把旧的上弹参数当成正式命令。
    */
   FeedMotorControl_SetWait(&runtime->control, now_tick);
   (void)C610_M2006_SetOutputEnabled(&runtime->motor, false);
   (void)C610_M2006_SetCurrent(&runtime->motor, 0);
 
-  /* C610 控制电流不是永久寄存器，必须每个任务周期刷新聚合帧。 */
+  /* C610 控制电流不是永久寄存器，必须每周期刷新聚合帧；不发送就不会保持上一条命令。 */
   (void)C610_M2006_SendAll(&hcan1);
-  FeedMotorRuntime_Log(runtime, &feedback, online, now_ms, now_tick);
+  if (feedback_valid) {
+    FeedMotorRuntime_Log(runtime, &feedback, online, now_ms, now_tick);
+  }
 }

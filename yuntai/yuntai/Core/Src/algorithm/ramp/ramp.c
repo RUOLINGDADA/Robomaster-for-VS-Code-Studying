@@ -1,16 +1,23 @@
 /**
-  ******************************************************************************
-  * @file    ramp.c
-  * @brief   目标变化率限制器实现。
-  *
-  * 通俗理解：先算出这一周期最多能改变多少，再决定只走一步还是直接到达目标。
-  ******************************************************************************
-  */
+ * @file ramp.c
+ * @brief 按变化率追踪目标的非阻塞 Ramp。
+ *
+ * 目标、历史值和变化率使用同一单位体系；周期使用 s。
+ * 实例由所属任务独占。不访问外设，不检查反馈或输入许可。
+ * 错误周期会改变输出斜率。故障停机应直接重置，不能等待 Ramp。
+ */
 
 #include "algorithm/ramp/ramp.h"
 
 #include <stddef.h>
 
+/**
+ * @brief 建立 Ramp 起点。
+ * @param ramp 调用者独占对象；空指针不操作。
+ * @param initial_value 有限初值；单位由调用者定义。
+ * @retval None；保存初值并标记已初始化。
+ * @note 串行调用；不写硬件输出。
+ */
 void Ramp_Init(Ramp_HandleTypeDef *ramp, float initial_value) {
   if (ramp == NULL) {
     return;
@@ -19,10 +26,26 @@ void Ramp_Init(Ramp_HandleTypeDef *ramp, float initial_value) {
   ramp->initialized = true;
 }
 
+/**
+ * @brief 立即重建 Ramp 起点。
+ * @param ramp 调用者独占对象；空指针不操作。
+ * @param value 有限新值；与目标同单位。
+ * @retval None；跳过斜坡，清除旧输出趋势。
+ * @note 串行调用。上层故障停机可重置历史，再写硬件停止值。
+ */
 void Ramp_Reset(Ramp_HandleTypeDef *ramp, float value) {
   Ramp_Init(ramp, value);
 }
 
+/**
+ * @brief 按每秒最大变化率追踪目标。
+ * @param ramp 调用者独占对象；未初始化时直接以目标建立起点。
+ * @param target_value 有限目标；与历史同单位。
+ * @param max_rate_per_s 有限非负变化率，目标单位/s。
+ * @param dt_s 有限正周期，s；不能传 ms 或 Tick。
+ * @retval 本周期限速值；空指针、非正周期或负变化率返回 0。
+ * @note 串行调用。允许步长为 rate×dt；错误单位会使输出跳变。
+ */
 float Ramp_Update(Ramp_HandleTypeDef *ramp,
                   float target_value,
                   float max_rate_per_s,

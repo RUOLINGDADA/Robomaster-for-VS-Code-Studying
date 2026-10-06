@@ -1,35 +1,68 @@
 /**
-  ******************************************************************************
-  * @file    task_feed_motor_command.c
-  * @brief   供弹自循环测试参数实现。
-  ******************************************************************************
-  */
-
+ * @file task_feed_motor_command.c
+ * @brief 供弹命令邮箱与 100 ms 有效期。
+ *
+ * DBUS 任务是唯一发布者；所属电机任务读取值副本，不保存外部指针。
+ * 接收帧时间戳使用 HAL ms。超时使用同源无符号差值，不靠 0 ms 判定无效。
+ * 本模块不访问 DMA，不写电机，不创建 RTOS 对象。
+ * 短任务临界区复制全部字段，避免许可、按钮或速度来自不同帧。ISR 不调用接口。
+ */
+#include "FreeRTOS.h"
+#include "task.h"
 #include "task/task_feed_motor/task_feed_motor_command.h"
-#include "bsp/c610_m2006/test_c610_m2006_self_cycle.h"
-
+#include "task/task_feed_motor/task_feed_motor_config.h"
 #include <stddef.h>
 
-#define FEED_MOTOR_DEFAULT_ID 1U /* CAN 反馈 ID 为 0x200 + 1 = 0x201（默认使用唯一供弹电机）。 */
-#define FEED_MOTOR_DEFAULT_UP_TIME_MS C610_M2006_TEST_UP_TIME_MS /* 正式命令默认复用上弹调参值，单位 ms（保持两条路径参数一致）。 */
-#define FEED_MOTOR_DEFAULT_STOP_TIME_MS C610_M2006_TEST_STOP_TIME_MS /* 正式命令默认复用停止调参值，单位 ms（换向前先卸力）。 */
-#define FEED_MOTOR_DEFAULT_DOWN_TIME_MS C610_M2006_TEST_DOWN_TIME_MS /* 正式命令默认复用下弹调参值，单位 ms（负方向保持时间）。 */
-#define FEED_MOTOR_DEFAULT_LOG_PERIOD_MS C610_M2006_TEST_LOG_PERIOD_MS /* 正式日志默认复用调参日志间隔，单位 ms（避免刷屏）。 */
-#define FEED_MOTOR_DEFAULT_UP_CURRENT_RAW C610_M2006_TEST_UP_CURRENT_RAW /* 正式命令默认复用上弹电流原始值（不是安培）。 */
-#define FEED_MOTOR_DEFAULT_DOWN_CURRENT_RAW C610_M2006_TEST_DOWN_CURRENT_RAW /* 正式命令默认复用下弹电流原始值（负值表示反向）。 */
+static FeedMotor_CommandTypeDef g_command; /* DBUS 发布，供弹任务读取；临界区保护。 */
+static bool g_received; /* 是否发布过真实命令；时间戳 0 ms 也可能有效。 */
 
-void FeedMotorCommand_GetDefault(FeedMotor_CommandConfigTypeDef *config) {
-  if (config == NULL) {
-    return;
+/**
+ * @brief 发布一份完整发射命令。
+ * @param command 帧时间戳与按钮值；不保留外部指针。
+ * @retval true 已发布；false 空指针，旧命令不变。
+ * @note 仅 DBUS 任务调用；不创建队列，不阻塞。
+ */
+bool FeedMotorCommand_Submit(const FeedMotor_CommandTypeDef *command) {
+  /* 无效目的/来源指针不进入临界区，不改邮箱或调用者内存。 */
+  if (command == NULL) {
+    return false;
   }
+  /* 按钮、许可和原始接收时刻一起发布；逐字段裸写可能让新按钮配上旧时间。 */
+  taskENTER_CRITICAL();
+  g_command = *command;
+  g_received = true;
+  taskEXIT_CRITICAL();
+  return true;
+}
 
-  *config = (FeedMotor_CommandConfigTypeDef){
-      .motor_id = FEED_MOTOR_DEFAULT_ID,
-      .up_time_ms = FEED_MOTOR_DEFAULT_UP_TIME_MS,
-      .stop_time_ms = FEED_MOTOR_DEFAULT_STOP_TIME_MS,
-      .down_time_ms = FEED_MOTOR_DEFAULT_DOWN_TIME_MS,
-      .log_period_ms = FEED_MOTOR_DEFAULT_LOG_PERIOD_MS,
-      .up_current_raw = FEED_MOTOR_DEFAULT_UP_CURRENT_RAW,
-      .down_current_raw = FEED_MOTOR_DEFAULT_DOWN_CURRENT_RAW,
-  };
+/**
+ * @brief 读取命令并执行 100 ms 超时归零。
+ * @param now_ms HAL_GetTick 时间；不能传 FreeRTOS Tick。
+ * @param command 输出快照；无命令或过期时两个布尔值为 false。
+ * @retval true 有过命令；false 空指针或尚未发布。
+ * @note 仅任务调用；短临界区只复制，不等待新帧。
+ */
+bool FeedMotorCommand_GetSnapshot(uint32_t now_ms, FeedMotor_CommandTypeDef *command) {
+  /* 无效目的/来源指针不进入临界区，不改邮箱或调用者内存。 */
+  if (command == NULL) {
+    return false;
+  }
+  /* 将按钮、许可、时间戳和首帧标志作为一次状态复制；退出后只处理局部副本。
+   * received 与 timestamp 分开，真实 0 ms 帧不能被当作尚未收到命令。 */
+  taskENTER_CRITICAL();
+  *command = g_command;
+  const bool received = g_received;
+  taskEXIT_CRITICAL();
+  /* 同源 uint32_t 差值允许 HAL ms 回绕。g_received 单独区分未发布与真实 0 ms。
+   * 大于半个计数周期的差值按略新的时间处理；要求任务持续运行，不能跨半周期停调度。 */
+  const uint32_t age_ms = now_ms - command->timestamp_ms;
+  /* 发布者可能抢占并写入略新的同源时间戳；下溢不表示掉线。 */
+  if (!received || !command->enabled ||
+      (age_ms <= INT32_MAX && age_ms >= FEED_MOTOR_COMMAND_TIMEOUT_MS)) {
+    /* 只清除输出副本，保留原邮箱时间；本次查询不能给旧按钮续期。
+     * 两个布尔值一起失效，运行时据此立即停止拨弹和故障停轮。 */
+    command->enabled = false;
+    command->fire_requested = false;
+  }
+  return received;
 }

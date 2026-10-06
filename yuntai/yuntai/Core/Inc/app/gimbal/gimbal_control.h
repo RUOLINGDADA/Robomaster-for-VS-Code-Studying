@@ -1,19 +1,18 @@
 /**
-  ******************************************************************************
-  * @file    gimbal_control.h
-  * @brief   通用云台相对角度保持的角度环、速度环和电流输出。
-  *
-  * 输入是相对转速命令：持续推动时目标角度按速度移动，松手后目标角度
- * 停在最后位置。角度 P/D 与命令速度前馈给出速度目标，速度 PID 环给出 GM6020 电流原始
-  * 值。这里不访问 CAN、FreeRTOS 或串口，便于在主机上用合成反馈测试。
-  * 通俗理解：先决定“应该转多快”，再决定“电机要用多大力”，最后把电流变化放缓。
-  ******************************************************************************
-  */
+ * @file gimbal_control.h
+ * @brief 云台角度环、速度 PID、重力补偿与电流 Ramp。
+ *
+ * 角度使用连续 count，速度使用 rpm，输出使用 GM6020 电流原始值。
+ * 每轴由所属任务独占实例。输入反馈必须来自同一份 CAN 快照。
+ * 本模块只计算输出，不发送 CAN，不检查反馈年龄或配置合法性。
+ * 运行时先检查安全门；边界只过滤向外命令，反向命令仍可离开边界。
+ */
 
 #ifndef GIMBAL_CONTROL_H
 #define GIMBAL_CONTROL_H /* 防止通用云台控制接口被重复包含（避免控制结构和函数声明重复）。 */
 
 #include "algorithm/filter/low_pass_filter.h"
+#include "algorithm/gravity_compensation/gravity_compensation.h"
 #include "algorithm/pid/pid.h"
 #include "algorithm/ramp/ramp.h"
 #include "bsp/gm6020/gm6020.h"
@@ -40,18 +39,17 @@ typedef struct {
   float max_current_raw; /* 速度环输出电流上限，单位 GM6020 原始值（控制器的力矩上限）。 */
   float current_slew_raw_per_s; /* 电流 Ramp 上限，单位原始值/秒（限制电流改变速度）。 */
   float speed_filter_alpha; /* 速度低通滤波权重，范围 0~1（越小越平滑但响应越慢）。 */
-  bool gravity_compensation_enabled; /* true 时给本轴叠加角度相关的抗重力电流。 */
-  float gravity_compensation_bias_current_raw; /* 重力补偿偏置，单位 GM6020 原始电流。 */
-  float gravity_compensation_amplitude_current_raw; /* 重力补偿幅值，单位 GM6020 原始电流。 */
+  GravityCompensation_ConfigTypeDef gravity_compensation; /* 独立算法配置；不改变目标位置。 */
 } GimbalControl_ConfigTypeDef;
 
 typedef struct {
   Pid_ControllerTypeDef speed_pid; /* 速度 PID 控制器历史；D 默认为 0，沿用 PI（每轴独立保存积分和上一周期误差）。 */
   Ramp_HandleTypeDef current_ramp; /* 电流目标变化率限制状态（防止电流突变）。 */
   LowPassFilter_HandleTypeDef speed_filter; /* 实测速度滤波状态（先去掉测速毛刺）。 */
+  GravityCompensation_HandleTypeDef gravity_compensation; /* 重力算法状态；每轴独占。 */
   GimbalControl_ConfigTypeDef config; /* 初始化时复制的控制参数（不保存外部配置指针）。 */
   float target_angle_raw; /* 当前保持目标，单位连续编码器计数（松手后云台要停在这里）。 */
-  float position_integral_rpm; /* 位置环积分历史，单位 rpm（每轴独立，边界重定位或反馈恢复时清零）。 */
+  float position_integral_rpm; /* 位置环积分历史，单位 rpm（每轴独立，反馈恢复时清零，不改最后目标）。 */
   float target_speed_rpm; /* 上一次计算出的速度目标，单位 rpm（角度环给速度环的目标）。 */
   int32_t center_angle_raw; /* 控制器保存的标定中心，单位连续计数（用于诊断和重置）。 */
   bool initialized; /* true 表示 PID、Ramp 和滤波器已初始化（可以开始计算）。 */
@@ -81,14 +79,12 @@ void GimbalControl_Init(GimbalControl_HandleTypeDef *controller,
                      int32_t initial_angle_raw);
 
 /**
- * @brief  清除控制器历史量并把当前反馈角度设为新的保持目标（忘掉旧的力矩趋势）。
+ * @brief  清除控制器动态历史并保留最后的目标位置。
  * @param  controller 已初始化的通用云台控制器（不能与另一轴共用）。
- * @param  angle_raw 当前连续编码器角度，单位为原始计数（重置后的新位置）。
- * @note   用于反馈恢复或边界越界后的重新定位，避免旧目标角度突然追赶。
+ * @note   用于反馈恢复；不会改写 target_angle_raw，避免丢失最后一次有效控制位置。
  * @retval None 输出结果写入对象或参数，函数无返回值。
  */
-void GimbalControl_ResetToAngle(GimbalControl_HandleTypeDef *controller,
-                             int32_t angle_raw);
+void GimbalControl_ResetHistory(GimbalControl_HandleTypeDef *controller);
 
 /**
  * @brief  设置一个固定保持目标，不改变 PID、Ramp 和滤波历史（测试角度环时使用）。
@@ -101,13 +97,14 @@ bool GimbalControl_SetTargetAngle(GimbalControl_HandleTypeDef *controller,
                                int32_t target_angle_raw);
 
 /**
- * @brief  运行一次角度/速度级联控制（角度 P/D 加命令速度前馈，再由速度 PID 算电流）。
+ * @brief  运行位置 PID、速度 PID、重力补偿与统一电流 Ramp。
  * @param  controller 通用云台控制器（函数会更新 PID、滤波和 Ramp 历史）。
  * @param  feedback 同一次 CAN 快照中的反馈（角度和速度必须来自同一帧）。
  * @param  command 已完成超时检查的遥控或固定目标命令（固定目标标记避免零速度被当成回中）。
  * @param  dt_s 控制周期，单位秒（用于把 rpm 换算成这段时间内的角度变化）。
  * @param  output 输出的目标角度、速度和电流（调用者随后交给驱动）。
  * @retval None 输出结果写入对象或参数，函数无返回值。
+ * @note 仅所属任务串行调用；同一实例不能并发修改。
  */
 void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
                        const Gm6020_FeedbackTypeDef *feedback,

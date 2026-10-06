@@ -99,46 +99,7 @@
 #include <string.h>
 #include "cmsis_os.h"
 
-/*
- * ARM Compiler 4/5
- */
-#if   defined ( __CC_ARM )
-
-  #define __ASM            __asm                                      
-  #define __INLINE         __inline                                     
-  #define __STATIC_INLINE  static __inline
-
-  #include "cmsis_armcc.h"
-
-/*
- * GNU Compiler
- */
-#elif defined ( __GNUC__ )
-
-  #define __ASM            __asm                                      /*!< asm keyword for GNU Compiler          */
-  #define __INLINE         inline                                     /*!< inline keyword for GNU Compiler       */
-  #define __STATIC_INLINE  static inline
-
-  #include "cmsis_gcc.h"
-
-
-/*
- * IAR Compiler
- */
-#elif defined ( __ICCARM__ )
-
-  #ifndef   __ASM
-    #define __ASM                     __asm
-  #endif
-  #ifndef   __INLINE
-    #define __INLINE                  inline
-  #endif
-  #ifndef   __STATIC_INLINE
-    #define __STATIC_INLINE           static inline
-  #endif
-
-  #include <cmsis_iar.h>
-#endif
+#include "cmsis_compiler.h"
 
 extern void xPortSysTickHandler(void);
 

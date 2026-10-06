@@ -1,5 +1,6 @@
 #ifndef BMI088DRIVER_H
 #define BMI088DRIVER_H
+#include "cmsis_compiler.h"
 
 #include "struct_typedef.h"
 #include "main.h"
@@ -46,7 +47,7 @@
 #define BMI088_GYRO_125_SEN     0.000066579027251980956150958662738366f
 
 
-typedef __packed struct BMI088_RAW_DATA
+typedef __PACKED_STRUCT BMI088_RAW_DATA
 {
     uint8_t status;
     int16_t accel[3];

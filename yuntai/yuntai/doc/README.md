@@ -24,24 +24,39 @@ doc/
 ├── protocol/              # CAN、串口、传感器等协议说明
 ├── hardware/              # 接线、引脚、板卡和器件资料
 ├── modules/               # 各驱动、算法和任务的对接说明
-└── decisions/             # 重要架构决策记录
+├── decisions/             # 重要架构决策记录
+└── REFERENCES.md          # 本轮 PDF 来源、转换限制和参考代码
 ```
 
 当前已实现模块：
 
+- `Core/Inc/app/log/` 与 `Core/Src/app/log/`：独立 Yaw/Pitch/供弹开关、统一日志宏和唯一 USART1 DMA 后端，支持 DBUS 全量/10 通道图表输出；配置和上位机操作见 `doc/modules/log/README.md`。
 - `Core/Inc/bsp/c610_m2006/` 与 `Core/Src/bsp/c610_m2006/`：C610 电调 + M2006 电机 CAN 驱动。接口和协议边界见 `doc/modules/c610_m2006/README.md`。
+- `Core/Inc/bsp/snail_2305/` 与 `Core/Src/bsp/snail_2305/`：C615 + Snail 2305 TIM1 PWM 驱动，接口和安全脉宽见 `doc/modules/snail_2305/README.md`。
 - `Core/Inc/task/task_feed_motor/` 与 `Core/Src/task/task_feed_motor/`：唯一 M2006 供弹电机的目录化任务，分为入口、命令、控制和运行时；C610 驱动保留反馈新鲜度清零门。运行参数和在线判定见 `doc/modules/task_feed_motor/README.md`。
 - `Core/Inc/bsp/gm6020/` 与 `Core/Src/bsp/gm6020/`：GM6020 协议、连续角度、快照和只读软件边界状态；云台命令过滤与闭环保持由 `app/gimbal` 完成，见 `doc/modules/gm6020/README.md`。
-- `Core/Inc/algorithm/` 与 `Core/Src/algorithm/`：与硬件无关的 PID、Ramp 和一阶低通，见 `doc/modules/algorithm/README.md`。
+- `Core/Inc/algorithm/` 与 `Core/Src/algorithm/`：与硬件无关的 PID、Ramp、一阶低通和连续角度重力补偿，见 `doc/modules/algorithm/README.md`。
+- `Core/Inc/algorithm/mouse_virtual_joystick/` 与 `Core/Src/algorithm/mouse_virtual_joystick/`：DBUS 鼠标帧去重、虚拟速度累计、保持和自动回中，见 `doc/modules/mouse_virtual_joystick/README.md`。
 - `Core/Inc/task/task_yaw/` 与 `Core/Src/task/task_yaw/`：Yaw 配置、命令适配和 FreeRTOS 入口，控制和边界过滤由 app/gimbal 共用，见 `doc/modules/task_yaw/README.md`。
 - `Core/Inc/bsp/dbus/`、`Core/Src/bsp/dbus/` 与 `task/task_dbus/`：DJI DBUS USART3 DMA 双缓冲接收、快照和右摇杆双轴命令适配，见 `doc/modules/dbus/README.md`。
+- `doc/CUBEMX_MANUAL_STEPS.md`：重新生成后的 USER CODE、TIM1 PWM、DBUS IRQ 和硬件校准检查清单。
+- `doc/REFERENCES.md`：本轮相关 PDF 的 Markdown 转换来源、版本、限制和参考代码入口。
 - `Core/Src/task/task_pitch/task_pitch.c`：Pitch 独立句柄和硬件调参入口，见 `doc/modules/task_pitch/README.md`。
 - `Core/Inc/app/gimbal/` 与 `Core/Src/app/gimbal/`：Yaw/Pitch 共用的 GM6020 轴运行时；负责快照驱动的正式角度环、Ramp、边界命令过滤和基础安全门，不绑定任务命令，见 `doc/modules/gimbal/README.md`。
 - `Core/Inc/bsp/gm6020/` 与 `Core/Src/bsp/gm6020/`：GM6020 驱动以及手动角度标定、固定目标角度闭环硬件调参代码；`Core/Inc/bsp/c610_m2006/` 与 `Core/Src/bsp/c610_m2006/`：C610/M2006 驱动和供弹自循环硬件调参代码。纯协议/算法验证不建立永久测试目录。
+- DBUS 鼠标 X/Y 累计为可保持、可自动回中的虚拟速度，再叠加到 Yaw/Pitch 右摇杆速度；鼠标左键命令由 `task_dbus` 发布，现有 `task_feed_motor` 管理双 C615 预旋和 M2006 角度步进。
 
 协议和硬件文档优先记录来源、版本、单位、字节序、时序和验证日期。无法确认的内容标为“待确认”，不要用猜测替代。
 
 ## 新模块文档最小模板
 
 每个新增模块至少说明：用途、文件位置、公开 API、依赖、运行上下文（任务/ISR/普通调用）、周期或超时、线程安全约束、失败处理、构建验证命令和已知限制。
+
+
+## 参数集中配置
+
+- 鼠标浮点灵敏度、每轴保持与回中：`Core/Inc/task/task_dbus/task_dbus_config.h`；过快时可将增益改为 `0.05f` 或 `0.01f`。
+- Yaw/Pitch 标定、PID、Ramp 和重力补偿：对应轴的 `task_*_config.h`。
+- C615 脉宽与 Ramp、C610 自循环及正式供弹：`task_feed_motor_config.h`。
+- 中文受控注释、配置归属和技能使用规则：`AGENTS.md` 与 `doc/CODING_STYLE.md`。
 

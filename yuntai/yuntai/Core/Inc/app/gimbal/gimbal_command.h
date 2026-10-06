@@ -1,10 +1,11 @@
 /**
-  * @file gimbal_command.h
-  * @brief 与具体任务无关的云台相对速度命令数据结构。
-  *
-  * 通俗理解：输入层只告诉云台“想向哪边、以多快转”，
-  * 具体如何保持角度由后面的控制器负责。
-  */
+ * @file gimbal_command.h
+ * @brief Yaw/Pitch 共用的相对速度命令结构。
+ *
+ * 输入层提交 ±1000‰ 速度和接收帧的 HAL ms 时间戳。
+ * 命令邮箱在任务间复制；本文件只定义数据，不保护共享内存。
+ * 命令失效停止目标移动；正式轴仍保持位置。反馈失效才清零电流。
+ */
 #ifndef GIMBAL_COMMAND_H
 #define GIMBAL_COMMAND_H /* 防止通用云台命令结构重复包含（避免结构体定义重复）。 */
 
@@ -12,10 +13,10 @@
 #include <stdint.h>
 
 typedef struct {
-  int16_t velocity_permille; /* -1000~1000，负/正表示相反方向（把摇杆量化成千分比）。 */
-  bool enabled; /* 正式相对输入 true 表示有效；false 走禁用零输出周期（有效回中是 true 且速度为零）。 */
+  float velocity_permille; /* -1000.0~1000.0‰；保留鼠标小数输入，负/正表示相反方向。 */
+  bool enabled; /* true 表示输入有效；false 停止目标移动，正式轴仍保持位置。反馈失效才清零。 */
   bool fixed_target; /* true 表示固定目标测试意图；零速度不应被边界过滤当成遥控器回中。 */
-  uint32_t timestamp_ms; /* 发布命令的 HAL 毫秒时间戳（用来判断命令是否过期）。 */
+  uint32_t timestamp_ms; /* 原始接收帧的 HAL ms 时间戳。重复发布不能刷新有效期。 */
 } Gimbal_CommandTypeDef;
 
 #endif /* GIMBAL_COMMAND_H（防止命令结构被重复包含） */

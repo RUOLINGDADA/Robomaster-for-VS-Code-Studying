@@ -1,16 +1,11 @@
 /**
-  ******************************************************************************
-  * @file    low_pass_filter.h
-  * @brief   一阶离散低通滤波器。
-  *
-  * 速度和反馈电流来自 CAN 离散采样，直接用单帧值判定堵转会把量化噪声
-  * 当成真实运动。该模块只做 y[n] = y[n-1] + alpha*(x-y) 的数值处理，
-  * 不负责选择 alpha，也不负责判断故障。
-  *
-  * 通俗理解：不要因为某一帧反馈突然抖了一下就立刻改变控制输出，
-  * 而是让结果向新采样靠近一小步。
-  ******************************************************************************
-  */
+ * @file low_pass_filter.h
+ * @brief 一阶低通滤波。
+ *
+ * 公式为 y += alpha * (x - y)。输入和输出使用相同单位。
+ * 调用者独占实例；任务或串行普通调用均可。不访问外设或判断故障。
+ * alpha 越小，噪声越少，响应越慢。滤波不能替代反馈新鲜度检查。
+ */
 
 #ifndef ALGORITHM_LOW_PASS_FILTER_H
 #define ALGORITHM_LOW_PASS_FILTER_H /* 防止低通滤波接口被重复包含（避免类型和函数声明重复）。 */
@@ -18,34 +13,39 @@
 #include <stdbool.h>
 
 typedef struct {
-  float value; /* 滤波后的输出值（下一次计算会从这个历史结果继续）。 */
-  float alpha; /* 滤波系数 0~1（越小越平滑，越大越相信新采样）。 */
-  bool initialized; /* 是否已经建立初始输出（第一次更新可直接使用输入）。 */
+  float value; /* 输出历史，与 input 同单位；所属任务更新，Reset 重建。 */
+  float alpha; /* 无量纲权重 [0,1]；Init 钳位，越小越平滑且滞后越大。 */
+  bool initialized; /* 已建立输出历史；false 时首帧直接采用 input。 */
 } LowPassFilter_HandleTypeDef;
 
 /**
- * @brief  初始化一阶低通滤波器（建立已知历史，避免首帧沿用未初始化数据）。
- * @param  filter 滤波器实例指针（可以同时创建多个互不干扰的滤波器）。
- * @param  initial_value 初始输出值，单位由调用者定义（决定第一次更新从哪里开始）。
- * @param  alpha 滤波系数，函数限制到 0~1（超范围会让结果越过新旧值并放大毛刺）。
+ * @brief 初始化输出与滤波系数。
+ * @param filter 调用者独占对象；空指针不操作。
+ * @param initial_value 初始输出，单位由调用者定义。
+ * @param alpha 有限系数；函数钳位到 [0,1]。
+ * @retval None；建立滤波历史。
+ * @note 串行调用。Init/Reset/Update 不可并发修改同一实例。
  */
 void LowPassFilter_Init(LowPassFilter_HandleTypeDef *filter,
                         float initial_value,
                         float alpha);
 
 /**
- * @brief  保留滤波系数并把输出重置到指定值（清除旧的平滑历史）。
- * @param  filter 滤波器状态（调用者独占）。
- * @param  value 新的输出值，单位由调用者定义（通常填当前实测值）。
+ * @brief 保留 alpha 并重建输出历史。
+ * @param filter 调用者独占对象；空指针不操作。
+ * @param value 新输出，单位与采样相同。
+ * @retval None；下周期从 value 继续滤波。
+ * @note 串行调用；不修改任何硬件输出。
  */
 void LowPassFilter_Reset(LowPassFilter_HandleTypeDef *filter,
                          float value);
 
 /**
- * @brief  输入一份采样并返回当前滤波结果（只移动 alpha 所占的一部分）。
- * @param  filter 已初始化或可延迟初始化的滤波器（保存上一次结果）。
- * @param  input 当前采样，单位由调用者定义（必须和历史值同单位）。
- * @retval 低通后的数值；传入空指针时返回 0（空指针按安全值处理）。
+ * @brief 用当前采样推进一次低通。
+ * @param filter 调用者独占对象；未初始化时以本次输入建立历史。
+ * @param input 有限采样值；单位须与历史相同。
+ * @retval 滤波值；空指针返回 0。
+ * @note 串行调用。更小 alpha 会增加响应滞后，不能掩盖反馈过期。
  */
 float LowPassFilter_Update(LowPassFilter_HandleTypeDef *filter, float input);
 

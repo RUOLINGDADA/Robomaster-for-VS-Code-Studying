@@ -21,6 +21,7 @@
 #include "cmsis_os.h"
 #include "can.h"
 #include "dma.h"
+#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -95,6 +96,7 @@ int main(void)
   MX_CAN1_Init();
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
   /* CAN 过滤器配置（当前掩码全零，FIFO0 接收所有标准帧，具体 ID 由驱动分发层再筛选）。 */
   CAN_FilterTypeDef filter_cfg = {0};

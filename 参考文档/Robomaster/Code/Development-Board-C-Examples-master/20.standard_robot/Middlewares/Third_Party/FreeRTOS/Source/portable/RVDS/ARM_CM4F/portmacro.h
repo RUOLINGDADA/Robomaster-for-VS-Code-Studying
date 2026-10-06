@@ -29,6 +29,8 @@
 #ifndef PORTMACRO_H
 #define PORTMACRO_H
 
+#include "cmsis_compiler.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -87,8 +89,8 @@ typedef unsigned long UBaseType_t;
 																				\
 	/* Barriers are normally not required but do ensure the code is completely	\
 	within the specified behaviour for the architecture. */						\
-	__dsb( portSY_FULL_READ_WRITE );											\
-	__isb( portSY_FULL_READ_WRITE );											\
+	__DSB();											\
+	__ISB();											\
 }
 /*-----------------------------------------------------------*/
 
@@ -136,7 +138,7 @@ extern void vPortExitCritical( void );
 
 	/*-----------------------------------------------------------*/
 
-	#define portGET_HIGHEST_PRIORITY( uxTopPriority, uxReadyPriorities ) uxTopPriority = ( 31UL - ( uint32_t ) __clz( ( uxReadyPriorities ) ) )
+	#define portGET_HIGHEST_PRIORITY( uxTopPriority, uxReadyPriorities ) uxTopPriority = ( 31UL - ( uint32_t ) __CLZ( ( uxReadyPriorities ) ) )
 
 #endif /* taskRECORD_READY_PRIORITY */
 /*-----------------------------------------------------------*/
@@ -159,11 +161,46 @@ not necessary for to use this port.  They are defined so the common demo files
 #define portINLINE __inline
 
 #ifndef portFORCE_INLINE
-	#define portFORCE_INLINE __forceinline
+	#if defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6010050)
+    #define portFORCE_INLINE inline __attribute__((always_inline))
+    #else
+    #define portFORCE_INLINE __forceinline
+    #endif
 #endif
 
 /*-----------------------------------------------------------*/
 
+#if defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6010050)
+/* Arm Compiler 6 uses GNU-style assembly through the CMSIS intrinsics. */
+static portFORCE_INLINE void vPortSetBASEPRI( uint32_t ulBASEPRI )
+{
+    __set_BASEPRI(ulBASEPRI);
+}
+
+static portFORCE_INLINE void vPortRaiseBASEPRI( void )
+{
+    __set_BASEPRI(configMAX_SYSCALL_INTERRUPT_PRIORITY);
+    __DSB();
+    __ISB();
+}
+
+static portFORCE_INLINE void vPortClearBASEPRIFromISR( void )
+{
+    __set_BASEPRI(0);
+}
+
+static portFORCE_INLINE uint32_t ulPortRaiseBASEPRI( void )
+{
+    uint32_t ulReturn = __get_BASEPRI();
+    vPortRaiseBASEPRI();
+    return ulReturn;
+}
+
+static portFORCE_INLINE BaseType_t xPortIsInsideInterrupt( void )
+{
+    return (__get_IPSR() != 0) ? pdTRUE : pdFALSE;
+}
+#else
 static portFORCE_INLINE void vPortSetBASEPRI( uint32_t ulBASEPRI )
 {
 	__asm
@@ -243,6 +280,8 @@ BaseType_t xReturn;
 	return xReturn;
 }
 
+
+#endif
 
 #ifdef __cplusplus
 }

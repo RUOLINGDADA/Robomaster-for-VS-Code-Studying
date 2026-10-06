@@ -44,13 +44,19 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    Core/Src/app/log/log.c
     Core/Src/app/gimbal/gimbal_axis.c
     Core/Src/app/gimbal/gimbal_control.c
     Core/Src/algorithm/pid/pid.c
     Core/Src/algorithm/ramp/ramp.c
     Core/Src/algorithm/filter/low_pass_filter.c
+    Core/Src/algorithm/gravity_compensation/gravity_compensation.c
+    Core/Src/algorithm/mouse_virtual_joystick/mouse_virtual_joystick.c
     Core/Src/bsp/c610_m2006/c610_m2006.c
     Core/Src/bsp/gm6020/gm6020.c
+    Core/Src/bsp/snail_2305/snail_2305.c
+    Core/Src/bsp/snail_2305/test_snail_2305.c
+    Core/Src/bsp/snail_2305/test_snail_2305_calibration.c
     Core/Src/bsp/can/can_rx_dispatch.c
     Core/Src/bsp/dbus/dbus.c
     Core/Src/bsp/c610_m2006/test_c610_m2006_self_cycle.c

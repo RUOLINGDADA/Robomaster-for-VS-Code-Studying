@@ -1,12 +1,11 @@
 /**
-  ******************************************************************************
-  * @file    pid.c
-  * @brief   离散 PID、积分限幅和抗积分饱和实现。
-  *
-  * 通俗理解：比例项负责“现在纠偏”，积分项负责“补长期欠账”，微分项负责
-  * “看变化趋势”；输出顶到上下限时暂缓继续累积积分，避免解除限幅后猛冲。
-  ******************************************************************************
-  */
+ * @file pid.c
+ * @brief 离散 PID 与抗积分饱和。
+ *
+ * 调用者定义误差和输出单位，并传入真实周期 dt_s。
+ * 实例由所属控制任务独占。不访问 CAN、PWM 或 RTOS 对象。
+ * 输出饱和时禁止积分继续向外累加，防止恢复后过冲。
+ */
 
 #include "algorithm/pid/pid.h"
 
@@ -23,6 +22,19 @@ static float Pid_Clamp(float value, float minimum, float maximum) {
   return value;
 }
 
+/**
+ * @brief 复制 PID 参数并清除控制历史。
+ * @param controller 调用者独占对象；空指针不操作。
+ * @param kp 比例增益，输出单位/误差单位。
+ * @param ki 积分增益，输出单位/(误差单位·s)。
+ * @param kd 微分增益，输出单位·s/误差单位。
+ * @param output_min 输出下限；须不大于 output_max。
+ * @param output_max 输出上限；与下一级输入单位相同。
+ * @param integral_min 积分项下限；须不大于 integral_max。
+ * @param integral_max 积分项上限；与输出同单位。
+ * @retval None；参数由上层保证有限且范围有效。
+ * @note 串行调用。每个控制环独占实例，不能共用积分历史。
+ */
 void Pid_Init(Pid_ControllerTypeDef *controller,
               float kp,
               float ki,
@@ -44,6 +56,12 @@ void Pid_Init(Pid_ControllerTypeDef *controller,
   Pid_Reset(controller);
 }
 
+/**
+ * @brief 清除积分与微分历史，保留参数。
+ * @param controller 调用者独占对象；空指针不操作。
+ * @retval None；下次 Update 避免首帧微分尖峰。
+ * @note 串行调用。反馈恢复时重置，防止旧积分推动电机。
+ */
 void Pid_Reset(Pid_ControllerTypeDef *controller) {
   if (controller == NULL) {
     return;
@@ -53,6 +71,14 @@ void Pid_Reset(Pid_ControllerTypeDef *controller) {
   controller->initialized = false;
 }
 
+/**
+ * @brief 计算一次限幅后的离散 PID 输出。
+ * @param controller 已配置且独占的控制器。
+ * @param error 目标减反馈，单位与增益一致；须为有限值。
+ * @param dt_s 实际周期，s；须为有限正值。
+ * @retval 限幅输出；空指针或非正周期返回 0。
+ * @note 串行调用。饱和时只接受有助于离开饱和的积分，防止解除限幅后反冲。
+ */
 float Pid_Update(Pid_ControllerTypeDef *controller, float error, float dt_s) {
   if (controller == NULL || dt_s <= 0.0f) {
     return 0.0f;

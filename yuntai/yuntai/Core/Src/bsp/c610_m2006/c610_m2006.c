@@ -1,14 +1,12 @@
 /**
-  ******************************************************************************
-  * @file    c610_m2006.c
-  * @brief   C610/M2006 RoboMaster CAN 电机驱动实现。
-  *
-  * 本文件使用固定大小的静态注册表，避免电机接收中断或控制任务调用
-  * malloc。接收路径只做帧过滤、字段解析和时间戳更新；发送路径把同一
-  * CAN 总线上的电流值聚合到 0x200/0x1FF 控制帧中。
-  * 通俗理解：先收反馈确认电机在线，再把多个电机的目标电流放进对应控制帧槽位。
-  ******************************************************************************
-  */
+ * @file c610_m2006.c
+ * @brief C610/M2006 CAN 反馈与电流接口。
+ *
+ * 协议来自 C610 手册：反馈 0x201~0x208，控制 0x200/0x1FF，标准帧 8 字节。
+ * CAN ISR 解码大端字段并展开连续角度；所属任务缓存电流、检查 HAL ms 年龄。
+ * 任务在短临界区构建并提交聚合帧。过期槽位为零，不等待总线完成。
+ * 本模块不启动 CAN，不运行角度闭环，不检测卡弹。
+ */
 
 #include "bsp/c610_m2006/c610_m2006.h"
 
@@ -16,9 +14,12 @@
 
 #if !defined(HAL_CAN_MODULE_ENABLED)
 
-/*
- * CubeMX 尚未启用 CAN 时保留接口而不引用 HAL CAN 字段和函数，保证工程
- * 可以先完成其它模块构建（此时所有驱动操作安全返回 false）。启用 HAL_CAN_MODULE_ENABLED 后自动编译下方完整实现。
+/**
+ * @brief 保留未启用 CAN 时的移植接口。
+ * @param hmotor 保留参数；未启用 CAN 时不使用。
+ * @param config 保留参数；未启用 CAN 时不使用。
+ * @retval false；不修改句柄、输出参数或硬件。
+ * @note 仅在 HAL_CAN_MODULE_ENABLED 未定义时编译；不代表硬件已停止。
  */
 bool C610_M2006_Init(C610_M2006_HandleTypeDef *hmotor,
                      const C610_M2006_ConfigTypeDef *config) {
@@ -27,11 +28,24 @@ bool C610_M2006_Init(C610_M2006_HandleTypeDef *hmotor,
   return false;
 }
 
+/**
+ * @brief 保留未启用 CAN 时的移植接口。
+ * @param hmotor 保留参数；未启用 CAN 时不使用。
+ * @retval false；不修改句柄、输出参数或硬件。
+ * @note 仅在 HAL_CAN_MODULE_ENABLED 未定义时编译；不代表硬件已停止。
+ */
 bool C610_M2006_DeInit(C610_M2006_HandleTypeDef *hmotor) {
   (void)hmotor;
   return false;
 }
 
+/**
+ * @brief 保留未启用 CAN 时的移植接口。
+ * @param hmotor 保留参数；未启用 CAN 时不使用。
+ * @param current_raw 保留参数；未启用 CAN 时不使用。
+ * @retval false；不修改句柄、输出参数或硬件。
+ * @note 仅在 HAL_CAN_MODULE_ENABLED 未定义时编译；不代表硬件已停止。
+ */
 bool C610_M2006_SetCurrent(C610_M2006_HandleTypeDef *hmotor,
                            int16_t current_raw) {
   (void)hmotor;
@@ -39,6 +53,13 @@ bool C610_M2006_SetCurrent(C610_M2006_HandleTypeDef *hmotor,
   return false;
 }
 
+/**
+ * @brief 保留未启用 CAN 时的移植接口。
+ * @param hmotor 保留参数；未启用 CAN 时不使用。
+ * @param enabled 保留参数；未启用 CAN 时不使用。
+ * @retval false；不修改句柄、输出参数或硬件。
+ * @note 仅在 HAL_CAN_MODULE_ENABLED 未定义时编译；不代表硬件已停止。
+ */
 bool C610_M2006_SetOutputEnabled(C610_M2006_HandleTypeDef *hmotor,
                                  bool enabled) {
   (void)hmotor;
@@ -46,6 +67,14 @@ bool C610_M2006_SetOutputEnabled(C610_M2006_HandleTypeDef *hmotor,
   return false;
 }
 
+/**
+ * @brief 保留未启用 CAN 时的移植接口。
+ * @param hcan 保留参数；未启用 CAN 时不使用。
+ * @param rx_header 保留参数；未启用 CAN 时不使用。
+ * @param data 保留参数；未启用 CAN 时不使用。
+ * @retval false；不修改句柄、输出参数或硬件。
+ * @note 仅在 HAL_CAN_MODULE_ENABLED 未定义时编译；不代表硬件已停止。
+ */
 bool C610_M2006_HandleRxMessage(
     CAN_HandleTypeDef *hcan, const CAN_RxHeaderTypeDef *rx_header,
     const uint8_t data[C610_M2006_FRAME_DLC]) {
@@ -55,17 +84,37 @@ bool C610_M2006_HandleRxMessage(
   return false;
 }
 
+/**
+ * @brief 保留未启用 CAN 时的移植接口。
+ * @param hcan 保留参数；未启用 CAN 时不使用。
+ * @param rx_fifo 保留参数；未启用 CAN 时不使用。
+ * @retval false；不修改句柄、输出参数或硬件。
+ * @note 仅在 HAL_CAN_MODULE_ENABLED 未定义时编译；不代表硬件已停止。
+ */
 bool C610_M2006_RxFifoCallback(CAN_HandleTypeDef *hcan, uint32_t rx_fifo) {
   (void)hcan;
   (void)rx_fifo;
   return false;
 }
 
+/**
+ * @brief 保留未启用 CAN 时的移植接口。
+ * @param hcan 保留参数；未启用 CAN 时不使用。
+ * @retval false；不修改句柄、输出参数或硬件。
+ * @note 仅在 HAL_CAN_MODULE_ENABLED 未定义时编译；不代表硬件已停止。
+ */
 bool C610_M2006_SendAll(CAN_HandleTypeDef *hcan) {
   (void)hcan;
   return false;
 }
 
+/**
+ * @brief 保留未启用 CAN 时的移植接口。
+ * @param hmotor 保留参数；未启用 CAN 时不使用。
+ * @param now_tick 保留参数；未启用 CAN 时不使用。
+ * @retval false；不修改句柄、输出参数或硬件。
+ * @note 仅在 HAL_CAN_MODULE_ENABLED 未定义时编译；不代表硬件已停止。
+ */
 bool C610_M2006_Process(C610_M2006_HandleTypeDef *hmotor,
                         uint32_t now_tick) {
   (void)hmotor;
@@ -73,6 +122,13 @@ bool C610_M2006_Process(C610_M2006_HandleTypeDef *hmotor,
   return false;
 }
 
+/**
+ * @brief 保留未启用 CAN 时的移植接口。
+ * @param hmotor 保留参数；未启用 CAN 时不使用。
+ * @param feedback 保留参数；未启用 CAN 时不使用。
+ * @retval false；不修改句柄、输出参数或硬件。
+ * @note 仅在 HAL_CAN_MODULE_ENABLED 未定义时编译；不代表硬件已停止。
+ */
 bool C610_M2006_GetFeedback(const C610_M2006_HandleTypeDef *hmotor,
                             C610_M2006_FeedbackTypeDef *feedback) {
   (void)hmotor;
@@ -80,6 +136,12 @@ bool C610_M2006_GetFeedback(const C610_M2006_HandleTypeDef *hmotor,
   return false;
 }
 
+/**
+ * @brief 保留未启用 CAN 时的移植接口。
+ * @param hmotor 保留参数；未启用 CAN 时不使用。
+ * @retval false；不修改句柄、输出参数或硬件。
+ * @note 仅在 HAL_CAN_MODULE_ENABLED 未定义时编译；不代表硬件已停止。
+ */
 bool C610_M2006_IsOnline(const C610_M2006_HandleTypeDef *hmotor) {
   (void)hmotor;
   return false;
@@ -88,12 +150,12 @@ bool C610_M2006_IsOnline(const C610_M2006_HandleTypeDef *hmotor) {
 #else
 
 typedef struct {
-  C610_M2006_HandleTypeDef *handle; /* 静态注册表中对应的设备句柄（每个槽位只放一个设备）。 */
-  bool in_use;                      /* true 表示该槽位已被一个句柄占用（避免重复注册）。 */
+  C610_M2006_HandleTypeDef *handle; /* 静态注册表中对应的设备句柄。每个槽位只放一个设备。 */
+  bool in_use;                      /* true 表示该槽位已被一个句柄占用。避免重复注册。 */
 } C610_M2006_SlotTypeDef;
 
 static C610_M2006_SlotTypeDef
-    g_c610_m2006_slots[C610_M2006_MAX_DEVICE_COUNT];
+    g_c610_m2006_slots[C610_M2006_MAX_DEVICE_COUNT]; /* 任务注册、CAN ISR 查找；句柄必须持久，注册/注销须串行化。 */
 
 /* 聚合发送期间屏蔽 CAN ISR，保证所有槽位来自同一份状态并一起提交。 */
 static uint32_t C610_M2006_EnterCritical(void) {
@@ -103,7 +165,7 @@ static uint32_t C610_M2006_EnterCritical(void) {
   return previous;
 }
 
-/* 恢复调用者原来的中断状态；不能无条件开中断破坏外层临界区。 */
+/* 恢复调用者原来的中断状态。不能无条件开中断破坏外层临界区。 */
 static void C610_M2006_ExitCritical(uint32_t previous) {
   __DMB();
   __set_PRIMASK(previous);
@@ -119,7 +181,7 @@ static bool C610_M2006_FeedbackFresh(const C610_M2006_HandleTypeDef *hmotor,
   return age_ms > INT32_MAX || age_ms < hmotor->config.feedback_timeout_ms;
 }
 
-/* 检查 M2006/C610 反馈 ID 是否落在 1~8；越界 ID 不能映射到控制帧槽位。 */
+/* 检查 M2006/C610 反馈 ID 是否落在 1~8。越界 ID 不能映射到控制帧槽位。 */
 static bool C610_M2006_IsValidId(uint8_t motor_id) {
   return motor_id >= C610_M2006_MIN_DEVICE_ID &&
          motor_id <= C610_M2006_MAX_DEVICE_ID;
@@ -150,9 +212,9 @@ static C610_M2006_HandleTypeDef *C610_M2006_Find(
   return NULL;
 }
 
-/* 解析大端有符号字段；直接指针读取会因 STM32 小端布局交换 DATA[0]/DATA[1]。 */
+/* 解析大端有符号字段。直接指针读取会因 STM32 小端布局交换 DATA[0]/DATA[1]。 */
 static int16_t C610_M2006_ReadI16Be(const uint8_t data[2]) {
-  /* 电调协议先发送高字节；不能把 data 地址强转成 int16_t*（STM32 小端会读反字节）。 */
+  /* 电调协议先发送高字节。不能把 data 地址强转成 int16_t*。STM32 小端会读反字节。 */
   uint16_t raw = ((uint16_t)data[0] << 8U) | data[1];
   return (int16_t)raw;
 }
@@ -165,11 +227,11 @@ static uint16_t C610_M2006_ReadU16Be(const uint8_t data[2]) {
 /* 将电流补码按大端放入一个两字节槽位，保持与 C610 控制帧协议一致。 */
 static void C610_M2006_WriteI16Be(uint8_t data[2], int16_t value) {
   const uint16_t raw = (uint16_t)value;
-  data[0] = (uint8_t)(raw >> 8U); /* CAN DATA[0] 放高字节（DATA[1] 放低字节）。 */
+  data[0] = (uint8_t)(raw >> 8U); /* CAN DATA[0] 放高字节。DATA[1] 放低字节。 */
   data[1] = (uint8_t)raw;
 }
 
-/* 将 ID 1~4/5~8 映射到各自帧内的 0~3 槽位；两组不能直接用 motor_id 做数组下标。 */
+/* 将 ID 1~4/5~8 映射到各自帧内的 0~3 槽位。两组不能直接用 motor_id 做数组下标。 */
 static uint8_t C610_M2006_ControlSlot(uint8_t motor_id) {
   return motor_id <= 4U ? (uint8_t)(motor_id - 1U)
                          : (uint8_t)(motor_id - 5U);
@@ -188,7 +250,7 @@ static C610_M2006_HandleTypeDef *C610_M2006_FindFirstOnBus(
   return NULL;
 }
 
-/* 提交一条 8 字节标准 CAN 控制帧；邮箱满时立即失败，不能在任务里忙等。 */
+/* 提交一条 8 字节标准 CAN 控制帧。邮箱满时立即失败，不能在任务里忙等。 */
 static bool C610_M2006_SendFrame(CAN_HandleTypeDef *hcan, uint32_t std_id,
                                  const uint8_t data[8]) {
   if (hcan == NULL || data == NULL ||
@@ -206,6 +268,15 @@ static bool C610_M2006_SendFrame(CAN_HandleTypeDef *hcan, uint32_t std_id,
          HAL_OK;
 }
 
+/**
+ * @brief  注册并初始化一个 C610/M2006 设备句柄。
+ * @param  hmotor 由调用方提供的句柄存储，不能为 NULL。
+ * @param  config  CAN 句柄、电调 ID 和超时参数。
+ * @retval true   初始化成功并完成静态注册。
+ * @retval false  参数非法、ID 重复、总线为空或注册表已满。
+ * @note   本函数不启动 CAN 外设，也不配置过滤器。这属于 CubeMX/板级层。
+ * @note 仅所属任务初始化。调用者串行化注册操作，注册时保持输出关闭。
+ */
 bool C610_M2006_Init(C610_M2006_HandleTypeDef *hmotor,
                      const C610_M2006_ConfigTypeDef *config) {
   if (hmotor == NULL || config == NULL || config->hcan == NULL ||
@@ -214,17 +285,14 @@ bool C610_M2006_Init(C610_M2006_HandleTypeDef *hmotor,
     return false;
   }
 
-  memset(hmotor, 0, sizeof(*hmotor));  /* 清零整个句柄（丢掉上一次使用留下的状态，重新从干净起点初始化）。 */
-  /*
-    如果写 hmotor->config = config，只是复制指针；外部 config 如果是局部栈变量，函数结束栈销毁，hmotor->config 变成野指针，后续访问直接 HardFault。
-    hmotor->config = *config 做结构体值拷贝，句柄内部拥有一份独立副本，不受外部 config 生命周期影响（所以配置可来自局部变量）。
-  */
+  memset(hmotor, 0, sizeof(*hmotor));  /* 清除旧句柄状态。从零状态重新初始化。 */
+  /* 复制配置值。句柄不能保存调用者的局部配置指针。 */
   hmotor->config = *config;
   if (hmotor->config.feedback_timeout_ms == 0U) {
     hmotor->config.feedback_timeout_ms = C610_M2006_FEEDBACK_TIMEOUT_MS;
   }
 
-  /* 放入静态注册表（驱动用固定槽位管理电机，不在运行时 malloc，适合 ISR/任务并发）。 */
+  /* 放入静态注册表。驱动用固定槽位管理电机，不在运行时 malloc，适合 ISR/任务并发。 */
   for (uint8_t i = 0U; i < C610_M2006_MAX_DEVICE_COUNT; i++) {
     if (!g_c610_m2006_slots[i].in_use) {
       g_c610_m2006_slots[i].handle = hmotor;
@@ -238,6 +306,13 @@ bool C610_M2006_Init(C610_M2006_HandleTypeDef *hmotor,
   return false;
 }
 
+/**
+ * @brief  注销一个已注册设备并清零其运行状态。
+ * @param  hmotor 已初始化的设备句柄。
+ * @retval true   注销成功。
+ * @retval false  参数为空或句柄未注册。
+ * @note 仅所属任务调用。先提交零电流，并屏蔽 CAN 接收中断后注销。
+ */
 bool C610_M2006_DeInit(C610_M2006_HandleTypeDef *hmotor) {
   if (hmotor == NULL || !C610_M2006_IsRegistered(hmotor)) {
     return false;
@@ -254,6 +329,16 @@ bool C610_M2006_DeInit(C610_M2006_HandleTypeDef *hmotor) {
   return true;
 }
 
+/**
+ * @brief  设置目标电流原始值。
+ * @param  hmotor 电机句柄。
+ * @param  current_raw C610 CAN 协议中的有符号电流原始值。
+ * @retval true   值已写入目标缓存。
+ * @retval false  参数非法或设备未初始化。
+ * @note   本函数只更新 RAM 中的目标值。真正发送由
+ * C610_M2006_SendAll() 完成，因此适合在控制任务中调用。
+ * @note 仅所属控制任务调用；ISR 不设置目标。
+ */
 bool C610_M2006_SetCurrent(C610_M2006_HandleTypeDef *hmotor,
                            int16_t current_raw) {
   if (hmotor == NULL || !hmotor->initialized ||
@@ -271,6 +356,14 @@ bool C610_M2006_SetCurrent(C610_M2006_HandleTypeDef *hmotor,
   return true;
 }
 
+/**
+ * @brief  设置输出使能状态。
+ * @param  hmotor 电机句柄。
+ * @param  enabled true 允许发送目标电流，false 强制本设备电流为零。
+ * @retval true   状态已更新。
+ * @retval false  参数非法或设备未初始化。
+ * @note 仅所属控制任务调用；ISR 不改变输出许可。
+ */
 bool C610_M2006_SetOutputEnabled(C610_M2006_HandleTypeDef *hmotor,
                                  bool enabled) {
   if (hmotor == NULL || !hmotor->initialized ||
@@ -278,7 +371,7 @@ bool C610_M2006_SetOutputEnabled(C610_M2006_HandleTypeDef *hmotor,
     return false;
   }
 
-  /* 未收到新鲜反馈时拒绝打开输出；只改目标缓存而不设安全门会让首帧前的旧命令直接上总线。 */
+  /* 未收到新鲜反馈时拒绝打开输出。只改目标缓存而不设安全门会让首帧前的旧命令直接上总线。 */
   if (enabled && !C610_M2006_IsOnline(hmotor)) {
     return false;
   }
@@ -293,6 +386,16 @@ bool C610_M2006_SetOutputEnabled(C610_M2006_HandleTypeDef *hmotor,
   return true;
 }
 
+/**
+ * @brief  处理一帧已经从 HAL CAN FIFO 取出的接收数据。
+ * @param  hcan CAN 外设句柄。
+ * @param  rx_header HAL 接收帧头。
+ * @param  data 8 字节 CAN 数据区。
+ * @retval true   该帧属于已注册设备并已更新反馈。
+ * @retval false  该帧不是本驱动支持的反馈帧。
+ * @note   可从 `HAL_CAN_RxFifo0MsgPendingCallback` 调用。不要在这里阻塞。
+ * @note 仅由串行化的 CAN 接收路径调用；通常位于 CAN ISR。
+ */
 bool C610_M2006_HandleRxMessage(
     CAN_HandleTypeDef *hcan, const CAN_RxHeaderTypeDef *rx_header,
     const uint8_t data[C610_M2006_FRAME_DLC]) {
@@ -313,18 +416,31 @@ bool C610_M2006_HandleRxMessage(
   }
 
   /*
-   * 反馈字段是协议定义的 8 字节快照（角度、转速、电流均为大端有符号/无符号
+   * 反馈字段是协议定义的 8 字节快照。角度、转速、电流均为大端有符号/无符号
    * 整数，DATA[6] 为空、DATA[7] 为错误码。接收中断只完成解码和时间戳更新，
-   * 把控制决策留给任务；通俗理解：ISR 只翻译 CAN 帧，不在中断里决定电机怎么转）。
+   * 把控制决策留给任务。ISR 只翻译 CAN 帧，不执行控制算法。
    */
-  /* 手册规定角度为 13 位 0~8191；屏蔽未定义高位，避免把保留位当角度（只保留低 13 位）。 */
+  /* 手册规定角度为 13 位 0~8191。屏蔽未定义高位，避免把保留位当角度。只保留低 13 位。 */
   hmotor->feedback_sequence++;
   __DMB();
-  hmotor->feedback.angle_raw =
+  const uint16_t angle_raw =
       C610_M2006_ReadU16Be(&data[0]) & (C610_M2006_ENCODER_COUNTS_PER_REV - 1U);
+  /* 每个 CAN 帧展开角度。若只在 2 ms 任务中展开，高速时可能漏过半圈。不能跳帧计圈。 */
+  if (!hmotor->feedback_received) {
+    hmotor->feedback.angle_total_raw = angle_raw;
+  } else {
+    int32_t delta = (int32_t)angle_raw - hmotor->feedback.angle_raw;
+    if (delta > 4096) {
+      delta -= 8192;
+    } else if (delta < -4096) {
+      delta += 8192;
+    }
+    hmotor->feedback.angle_total_raw += delta;
+  }
+  hmotor->feedback.angle_raw = angle_raw;
   hmotor->feedback.speed_rpm = C610_M2006_ReadI16Be(&data[2]);
   hmotor->feedback.current_raw = C610_M2006_ReadI16Be(&data[4]);
-  hmotor->feedback.reserved_raw = data[6]; /* C610 手册明确 DATA[6] 为空（原样留给诊断）。 */
+  hmotor->feedback.reserved_raw = data[6]; /* C610 手册明确 DATA[6] 为空。原样留给诊断。 */
   hmotor->feedback.error_code = data[7];
   hmotor->feedback.last_feedback_tick = HAL_GetTick();
   hmotor->feedback_received = true;
@@ -335,6 +451,14 @@ bool C610_M2006_HandleRxMessage(
   return true;
 }
 
+/**
+ * @brief  从硬件 CAN FIFO 取帧并交给本驱动解析。
+ * @param  hcan CAN 外设句柄。
+ * @param  rx_fifo HAL CAN FIFO 编号，例如 CAN_RX_FIFO0。
+ * @retval true   取帧成功且属于本驱动设备。
+ * @retval false  HAL 取帧失败或帧不匹配。
+ * @note 仅 CAN ISR 调用。多个驱动共享 FIFO 时使用统一分发入口。
+ */
 bool C610_M2006_RxFifoCallback(CAN_HandleTypeDef *hcan, uint32_t rx_fifo) {
   CAN_RxHeaderTypeDef rx_header = {0};
   uint8_t data[C610_M2006_FRAME_DLC] = {0};
@@ -345,6 +469,16 @@ bool C610_M2006_RxFifoCallback(CAN_HandleTypeDef *hcan, uint32_t rx_fifo) {
   return C610_M2006_HandleRxMessage(hcan, &rx_header, data);
 }
 
+/**
+ * @brief  发送所有已注册设备的聚合控制帧。
+ * @param  hcan 指定 CAN 总线句柄。
+ * @retval true   没有发送错误，或该总线上没有设备。
+ * @retval false  CAN 邮箱不足、句柄非法或 HAL 发送失败。
+ * @note   建议由固定周期任务调用。每条总线最多发送 0x200 和 0x1FF
+ * 两帧，帧中的每两个字节对应一个电机 ID。函数在提交前检查反馈
+ * 新鲜度，并在短 PRIMASK 临界区内完成槽位读取、构建和提交。不等待邮箱。
+ * @note 仅任务调用。每条总线的槽位构建与提交使用同一短临界区。
+ */
 bool C610_M2006_SendAll(CAN_HandleTypeDef *hcan) {
   if (hcan == NULL) {
     return false;
@@ -356,12 +490,12 @@ bool C610_M2006_SendAll(CAN_HandleTypeDef *hcan) {
   const uint32_t previous = C610_M2006_EnterCritical();
   const uint32_t now_ms = HAL_GetTick();
 
-  uint8_t low_data[C610_M2006_FRAME_DLC] = {0}; /* 0x200 控制帧数据（电机 ID 1~4 各占两个字节）。 */
-  uint8_t high_data[C610_M2006_FRAME_DLC] = {0}; /* 0x1FF 控制帧数据（电机 ID 5~8 各占两个字节）。 */
+  uint8_t low_data[C610_M2006_FRAME_DLC] = {0}; /* 0x200 控制帧数据。电机 ID 1~4 各占两个字节。 */
+  uint8_t high_data[C610_M2006_FRAME_DLC] = {0}; /* 0x1FF 控制帧数据。电机 ID 5~8 各占两个字节。 */
   bool low_used = false;
   bool high_used = false;
 
-  /* 遍历这条 CAN 总线上的所有注册电机（不同总线不能混装在同一帧）。 */
+  /* 遍历这条 CAN 总线上的所有注册电机。不同总线不能混装在同一帧。 */
   for (uint8_t i = 0U; i < C610_M2006_MAX_DEVICE_COUNT; i++) {
     C610_M2006_HandleTypeDef *hmotor = g_c610_m2006_slots[i].handle;
     if (!g_c610_m2006_slots[i].in_use || hmotor == NULL ||
@@ -378,16 +512,16 @@ bool C610_M2006_SendAll(CAN_HandleTypeDef *hcan) {
                                 : (int16_t)0;
     if (hmotor->config.motor_id <= 4U) {
       /*
-        slot=0：从下标 0 开始写 2 字节 → ID1 电流
-        slot=1：从下标 2 开始写 2 字节 → ID2 电流
-        slot=2：从下标 4 开始写 2 字节 → ID3 电流
-        slot=3：从下标 6 开始写 2 字节 → ID4 电流（槽位 = ID - 1）。
-      */
+       * slot=0：从下标 0 开始写 2 字节 → ID1 电流
+       * slot=1：从下标 2 开始写 2 字节 → ID2 电流
+       * slot=2：从下标 4 开始写 2 字节 → ID3 电流
+       * slot=3：从下标 6 开始写 2 字节 → ID4 电流。槽位 = ID - 1。
+       */
       C610_M2006_WriteI16Be(&low_data[2U * slot], current);
-      low_used = true; /* 标记 0x200 帧已使用（至少有一个低编号电机需要发送）。 */
+      low_used = true; /* 标记 0x200 帧已使用。至少有一个低编号电机需要发送。 */
     } else {
       C610_M2006_WriteI16Be(&high_data[2U * slot], current);
-      high_used = true; /* 标记 0x1FF 帧已使用（至少有一个高编号电机需要发送）。 */
+      high_used = true; /* 标记 0x1FF 帧已使用。至少有一个高编号电机需要发送。 */
     }
   }
 
@@ -404,6 +538,14 @@ bool C610_M2006_SendAll(CAN_HandleTypeDef *hcan) {
   return sent;
 }
 
+/**
+ * @brief  按 HAL ms 更新在线状态。
+ * @param  hmotor 电机句柄。
+ * @param  now_tick HAL_GetTick() 的当前 ms。不能传 FreeRTOS Tick。
+ * @retval true   状态检查完成。
+ * @retval false  参数非法或设备未初始化。
+ * @note 仅所属任务调用；时间必须与 CAN ISR 的 HAL ms 同源。
+ */
 bool C610_M2006_Process(C610_M2006_HandleTypeDef *hmotor,
                         uint32_t now_tick) {
   if (hmotor == NULL || !hmotor->initialized ||
@@ -411,8 +553,10 @@ bool C610_M2006_Process(C610_M2006_HandleTypeDef *hmotor,
     return false;
   }
 
-  /* 没有收到过反馈时，last_feedback_tick 默认为 0，不能把启动早期的小时间差误认为在线；
-   * 必须先确认真实 CAN 帧到达（feedback_received 是首帧门槛）。 */
+  /*
+   * 没有收到过反馈时，last_feedback_tick 默认为 0，不能把启动早期的小时间差误认为在线。
+   * 必须先确认真实 CAN 帧到达。feedback_received 是首帧门槛。
+   */
   if (!C610_M2006_FeedbackFresh(hmotor, now_tick)) {
     hmotor->state = C610_M2006_STATE_OFFLINE;
     hmotor->target_current_raw = 0;
@@ -426,6 +570,16 @@ bool C610_M2006_Process(C610_M2006_HandleTypeDef *hmotor,
   return true;
 }
 
+/**
+ * @brief  复制一份反馈快照。
+ * @param  hmotor 电机句柄。
+ * @param  feedback 输出结构体。
+ * @retval true   复制成功。
+ * @retval false  参数非法、未初始化或复制期间连续冲突。
+ * @note   接收中断可能同时更新句柄。实现使用短序列号重试取得同一帧，
+ * 连续冲突时返回 false，调用者不能把失败输出当成真实反馈。
+ * @note 仅任务读取。失败输出不可用于控制；快照本身不保证反馈新鲜。
+ */
 bool C610_M2006_GetFeedback(const C610_M2006_HandleTypeDef *hmotor,
                             C610_M2006_FeedbackTypeDef *feedback) {
   if (hmotor == NULL || feedback == NULL || !hmotor->initialized ||
@@ -449,14 +603,20 @@ bool C610_M2006_GetFeedback(const C610_M2006_HandleTypeDef *hmotor,
   return false;
 }
 
+/**
+ * @brief  根据 HAL 毫秒时间判断反馈是否仍在线。只报告新鲜度，不保证多字段原子快照。
+ * @param  hmotor 已初始化的 C610/M2006 句柄。
+ * @retval true 最近收到有效反馈。false 未初始化、从未收到反馈或超过超时。
+ * @note 仅任务查询新鲜度；需要多个反馈字段时读取 GetFeedback 快照。
+ */
 bool C610_M2006_IsOnline(const C610_M2006_HandleTypeDef *hmotor) {
   if (hmotor == NULL || !hmotor->initialized || !hmotor->feedback_received ||
       hmotor->state == C610_M2006_STATE_OFFLINE ||
       hmotor->state == C610_M2006_STATE_UNINITIALIZED) {
     return false;
   }
-  /* 即使调用者漏掉本周期 Process，也不能把旧反馈永久当成在线（在线判断本身使用 HAL ms）。 */
+  /* 即使调用者漏掉本周期 Process，也不能把旧反馈永久当成在线。在线判断本身使用 HAL ms。 */
   return C610_M2006_FeedbackFresh(hmotor, HAL_GetTick());
 }
 
-#endif /* HAL_CAN_MODULE_ENABLED */
+#endif /* HAL_CAN_MODULE_ENABLED。 */

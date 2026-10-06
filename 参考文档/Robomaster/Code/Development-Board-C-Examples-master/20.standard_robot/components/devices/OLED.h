@@ -12,6 +12,7 @@
 #ifndef OLED_H
 #define OLED_H
 #include "struct_typedef.h"
+#include "cmsis_compiler.h"
 #include "oledfont.h"
 
 
@@ -42,7 +43,7 @@ typedef enum
 }pen_typedef;
 
 
-typedef  __packed struct  
+typedef  __PACKED_STRUCT
 {
     uint8_t cmd_data;
     uint8_t OLED_GRAM[8][128];

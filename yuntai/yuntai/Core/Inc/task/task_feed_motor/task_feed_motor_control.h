@@ -1,80 +1,74 @@
 /**
-  ******************************************************************************
-  * @file    task_feed_motor_control.h
-  * @brief   供弹电机上弹/停止/下弹/停止测试状态机。
-  *
-  * 控制层只计算当前阶段和目标电流，不直接访问 C610、CAN、FreeRTOS 或串口。
-  * 这样阶段顺序可以在主机上单独验证（任务入口只负责按周期调用，硬件层负责发送）。
-  ******************************************************************************
-  */
-
+ * @file task_feed_motor_control.h
+ * @brief 供弹预旋、角度步进与最小间隔状态机。
+ *
+ * 仅供弹任务调用。STOP 取消目标；SPINUP 等待双轮目标脉宽和预旋时间。
+ * ADVANCE 用角度 P 推进；INTERVAL 保持已完成目标并等待下一步。
+ * 输入为同一反馈快照的逻辑连续 count 和 rpm；输出为 C610 电流原始值。
+ * 误差与速度须连续满足 20 ms。目标变化后当周期重算误差，防止下一发迟一个周期。
+ * 阶段时长由 ms 转 FreeRTOS Tick。本模块不访问硬件，反馈掉线由运行时检查。
+ */
+/* 调用顺序：Init→每周期 Update；许可失效时 Update 内调用 Stop。
+ * 上层须先校验反馈新鲜度，使用同份角度/速度快照；本模块返回 raw，不直接触碰 CAN/PWM。 */
 #ifndef TASK_FEED_MOTOR_CONTROL_H
-#define TASK_FEED_MOTOR_CONTROL_H /* 防止状态机接口重复包含（避免阶段枚举重复定义）。 */
-
-#include "task/task_feed_motor/task_feed_motor_command.h"
-
+#define TASK_FEED_MOTOR_CONTROL_H /* 防止重复包含。 */
+#include "FreeRTOS.h"
+#include "algorithm/pid/pid.h"
 #include <stdbool.h>
 #include <stdint.h>
 
 typedef enum {
-  FEED_MOTOR_PHASE_WAIT_FEEDBACK = 0, /* 未收到有效反馈，强制零输出（先确认电机在线）。 */
-  FEED_MOTOR_PHASE_UP,                /* 使用正方向电流测试上弹（向一个方向转）。 */
-  FEED_MOTOR_PHASE_STOP_AFTER_UP,     /* 上弹后卸力，避免立即反向冲击（中间先发零）。 */
-  FEED_MOTOR_PHASE_DOWN,              /* 使用负方向电流测试下弹（向相反方向转）。 */
-  FEED_MOTOR_PHASE_STOP_AFTER_DOWN    /* 下弹后卸力，再回到上弹（形成完整循环）。 */
+  FEED_MOTOR_PHASE_STOP = 0, /* 无发射请求或安全门无效；零电流。 */
+  FEED_MOTOR_PHASE_SPINUP, /* 摩擦轮预旋；零电流。 */
+  FEED_MOTOR_PHASE_ADVANCE, /* 向一个新目标步进；角度 P 输出。 */
+  FEED_MOTOR_PHASE_INTERVAL /* 到位后等待；角度 P 保持该目标。 */
 } FeedMotor_PhaseTypeDef;
 
 typedef struct {
-  FeedMotor_PhaseTypeDef phase; /* 当前阶段（决定正电流、负电流还是零）。 */
-  uint32_t phase_start_tick; /* FreeRTOS Tick，不能与 HAL 毫秒直接相减（比较前必须统一为 Tick）。 */
+  FeedMotor_PhaseTypeDef phase; /* 本周期阶段；由供弹任务独占。 */
+  int64_t target_count; /* 逻辑电机轴连续 count；Stop 对齐当前反馈，StartStep 增加 STEP，不使用单圈回绕值。 */
+  TickType_t phase_start_tick; /* SPINUP/INTERVAL 进入时的 FreeRTOS Tick；仅切换时更新，无符号差算持续时间。 */
+  TickType_t settle_start_tick; /* 首次满足误差/速度窗口的 FreeRTOS Tick；仅 settling=true 时有效，0 Tick 也合法。 */
+  bool settling; /* 连续确认正在进行；Stop/StartStep、到位完成或任一条件失效时清 false，下次重新计时。 */
+  Pid_ControllerTypeDef position; /* count→C610 raw 的 P 控制器；I/D=0，停止与每个新步长清除历史，任务独占。 */
+  uint32_t completed_steps; /* ADVANCE→INTERVAL 时累加；Init 清零，Stop 保留，uint32_t 会回绕；不是实发弹数。 */
 } FeedMotor_ControlTypeDef;
 
 /**
- * @brief  将供弹测试状态机置于等待反馈阶段（当前周期由运行时发零）。
- * @param  control 任务独占的控制对象，不能为 NULL（不能与别的任务共享）。
- * @param  now_tick 当前 FreeRTOS Tick，作为等待阶段新的起点（阶段计时从此刻重置）。
- * @note   这里只清阶段，不访问 CAN，也不发送电流；硬件安全动作由运行时层完成（职责分离）。
+ * @brief 初始化控制历史为停止。
+ * @param control 任务独占对象。
+ * @retval None；空指针不操作。
+ * @note 仅所属任务串行调用；同一实例不能并发修改。
  */
-void FeedMotorControl_Init(FeedMotor_ControlTypeDef *control,
-                           uint32_t now_tick);
-
+void FeedMotorControl_Init(FeedMotor_ControlTypeDef *control);
 /**
- * @brief  在反馈失联时回到等待阶段（重新收到有效反馈后才允许进入上弹）。
- * @param  control 任务独占的控制对象，不能为 NULL（状态不与其他轴共享）。
- * @param  now_tick 当前 FreeRTOS Tick（作为下一阶段的起点）。
+ * @brief 取消未完成步进并将目标对齐当前位置。
+ * @param control 任务独占对象。
+ * @param angle_count 本周期逻辑连续角度，count。
+ * @retval None；清积分和阶段，输出由运行时清零。
+ * @note 仅所属任务串行调用；同一实例不能并发修改。
  */
-void FeedMotorControl_SetWait(FeedMotor_ControlTypeDef *control,
-                              uint32_t now_tick);
-
+void FeedMotorControl_Stop(FeedMotor_ControlTypeDef *control, int64_t angle_count);
 /**
- * @brief  推进一次上弹/停止/下弹/停止状态机（每次最多跨一个阶段）。
- * @param  control 任务独占的状态对象（保存当前阶段和起始 Tick）。
- * @param  config  测试时间和电流配置，时间字段为毫秒（函数内部转换为 Tick）。
- * @param  feedback_online true 表示 C610 已收到新鲜反馈（false 时回到等待并应发零）。
- * @param  now_tick 当前 FreeRTOS Tick（不能直接传 HAL 毫秒）。
- * @retval true  本次调用发生了阶段切换或首次进入上弹。
- * @retval false 仍处于当前阶段，或因反馈无效保持等待。
+ * @brief 推进一次状态机并计算本周期电流。
+ * @param control 已初始化的任务对象。
+ * @param fire 是否请求发射且全部安全门有效。
+ * @param wheels_ready 两轮到达活动脉宽；不等同于转速反馈。
+ * @param angle_count 本周期逻辑连续角度，count。
+ * @param speed_rpm 同份快照的逻辑速度，rpm。
+ * @param now_tick 当前 FreeRTOS Tick；毫秒配置在使用点转换。
+ * @param dt_ms 本周期 ms；不能传 Tick 数。
+ * @retval C610 原始目标电流；未预旋完或输入非法时为 0。
+ * @note 仅所属任务串行调用；同一实例不能并发修改。
  */
-bool FeedMotorControl_Update(FeedMotor_ControlTypeDef *control,
-                             const FeedMotor_CommandConfigTypeDef *config,
-                             bool feedback_online,
-                             uint32_t now_tick);
-
+int16_t FeedMotorControl_Update(FeedMotor_ControlTypeDef *control, bool fire,
+    bool wheels_ready, int64_t angle_count, int32_t speed_rpm,
+    TickType_t now_tick, uint32_t dt_ms);
 /**
- * @brief  读取当前阶段应发送的目标电流（只计算数值，不执行 CAN 发送）。
- * @param  control 当前状态对象（空指针按零电流处理）。
- * @param  config  测试电流配置，单位为 C610 原始值（正负表示方向）。
- * @retval 当前阶段电流；等待和停止阶段返回 0（换向前先卸力）。
- */
-int16_t FeedMotorControl_GetCurrent(
-    const FeedMotor_ControlTypeDef *control,
-    const FeedMotor_CommandConfigTypeDef *config);
-
-/**
- * @brief  获取阶段的静态日志名称（把枚举转换为可读中文）。
- * @param  phase 状态机阶段（未知值按等待处理）。
- * @retval 静态字符串，不需要释放（调用者不能 free）。
+ * @brief 返回阶段中文名称。
+ * @param phase 阶段枚举。
+ * @retval 静态只读字符串；未知枚举返回“停止”，不能释放或改写。
+ * @note 无可变状态，可并发查询；本工程用于供弹任务日志。
  */
 const char *FeedMotorControl_PhaseName(FeedMotor_PhaseTypeDef phase);
-
-#endif /* TASK_FEED_MOTOR_CONTROL_H（防止状态机接口被重复包含） */
+#endif /* TASK_FEED_MOTOR_CONTROL_H */

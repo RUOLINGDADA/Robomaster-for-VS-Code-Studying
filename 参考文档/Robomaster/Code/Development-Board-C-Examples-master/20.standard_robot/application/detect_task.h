@@ -52,6 +52,7 @@
   
 #ifndef DETECT_TASK_H
 #define DETECT_TASK_H
+#include "cmsis_compiler.h"
 #include "struct_typedef.h"
 
 
@@ -78,7 +79,7 @@ enum errorList
     ERROR_LIST_LENGHT,
 };
 
-typedef __packed struct
+typedef __PACKED_STRUCT
 {
     uint32_t new_time;
     uint32_t last_time;

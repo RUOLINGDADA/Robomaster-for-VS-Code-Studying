@@ -1,14 +1,10 @@
 /**
-  ******************************************************************************
-  * @file    can_rx_dispatch.c
-  * @brief   CAN1 FIFO0 接收中断的最小模块分发入口。
-  *
-  * HAL 只允许工程提供一个 HAL_CAN_RxFifo0MsgPendingCallback。这里把同一帧
-  * 依次交给 GM6020 和 C610/M2006 驱动；每个驱动自行按 CAN ID 过滤。函数
-  * 运行在 ISR 中，所以不能打印串口、调用阻塞 API 或执行复杂控制算法。
-  * 通俗理解：FIFO 只能由这里取一次，取出的同一帧再分别递给各驱动，避免后取的模块拿不到数据。
-  ******************************************************************************
-  */
+ * @file can_rx_dispatch.c
+ * @brief CAN FIFO0 的统一接收分发。
+ *
+ * HAL CAN ISR 只取一帧，再交给 GM6020 和 C610/M2006 按标准 ID 过滤。
+ * 各驱动分别取 FIFO 会丢弃其它设备反馈。本入口不打印、不等待、不执行闭环。
+ */
 
 #include "can.h"
 #include "bsp/c610_m2006/c610_m2006.h"
@@ -17,8 +13,9 @@
 /**
  * @brief  处理 CAN FIFO0 pending 中断。
  * @param  hcan 产生中断的 CAN 外设。
+ * @retval None。HAL 取帧失败时本次退出。
  * @note   当前 CAN1 使用 FIFO0。统一入口先取出一帧，再把同一份数据交给
- *         两个驱动，避免驱动之间争抢 FIFO 或丢失不属于自己的帧。
+ * 两个驱动，避免驱动之间争抢 FIFO 或丢失不属于自己的帧。
  */
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
   CAN_RxHeaderTypeDef rx_header = {0};
@@ -27,7 +24,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
     return;
   }
 
-  /* 先取一次帧，再把同一份数据交给各驱动（驱动自己判断这帧是不是自己的）。 */
+  /* 先取一次帧，再把同一份数据交给各驱动。驱动自己判断这帧是不是自己的。 */
   (void)Gm6020_HandleRxMessage(hcan, &rx_header, data);
   (void)C610_M2006_HandleRxMessage(hcan, &rx_header, data);
 }

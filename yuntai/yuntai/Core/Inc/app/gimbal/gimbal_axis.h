@@ -1,13 +1,12 @@
 /**
-  ******************************************************************************
-  * @file    gimbal_axis.h
-  * @brief   Yaw/Pitch 共用的 GM6020 角度闭环运行时。
-  *
-  * 每个轴独立保存电机句柄、控制器和标定范围。软件限位只过滤继续向外
-  * 的命令，角度环、速度环、Ramp 和抗重力补偿在限位处继续运行；动态
-  * 堵转锁存和固定限位电流不属于本模块。
-  ******************************************************************************
-  */
+ * @file gimbal_axis.h
+ * @brief GM6020 单轴闭环、反馈安全门与周期诊断。
+ *
+ * Yaw/Pitch 各自独占实例。所属任务每周期只复制一份反馈。
+ * CAN1 ISR 更新驱动；任务组合控制、输出许可、聚合帧和 UART 日志。
+ * 命令失效按零速度保持；反馈或参数失效清零。恢复时重建控制历史。
+ * 本模块不创建任务，不锁存堵转，不执行机械急停。
+ */
 #ifndef GIMBAL_AXIS_H
 #define GIMBAL_AXIS_H /* 防止通用云台轴接口被重复包含。 */
 
@@ -17,23 +16,23 @@
 #include <stdint.h>
 
 typedef enum {
-  GIMBAL_AXIS_PHASE_INIT = 0,
-  GIMBAL_AXIS_PHASE_WAIT_FEEDBACK,
-  GIMBAL_AXIS_PHASE_HOLD_POSITION,
-  GIMBAL_AXIS_PHASE_ACTIVE,
-  GIMBAL_AXIS_PHASE_LIMIT_HOLD,
-  GIMBAL_AXIS_PHASE_FEEDBACK_LOST
+  GIMBAL_AXIS_PHASE_INIT = 0, /* 尚未建立轴运行状态。 */
+  GIMBAL_AXIS_PHASE_WAIT_FEEDBACK, /* 等待有效首帧或有效参数；零输出。 */
+  GIMBAL_AXIS_PHASE_HOLD_POSITION, /* 零相对速度下保持位置。 */
+  GIMBAL_AXIS_PHASE_ACTIVE, /* 按相对速度移动目标。 */
+  GIMBAL_AXIS_PHASE_LIMIT_HOLD, /* 边界过滤向外命令，继续闭环保持。 */
+  GIMBAL_AXIS_PHASE_FEEDBACK_LOST /* 反馈过期；零输出并等待恢复。 */
 } GimbalAxis_PhaseTypeDef;
 
 typedef enum {
-  GIMBAL_AXIS_REASON_NONE = 0,
-  GIMBAL_AXIS_REASON_SOFT_MIN,
-  GIMBAL_AXIS_REASON_SOFT_MAX,
-  GIMBAL_AXIS_REASON_FEEDBACK_LOST,
-  GIMBAL_AXIS_REASON_CALIBRATION_INVALID,
-  GIMBAL_AXIS_REASON_TARGET_INVALID,
-  GIMBAL_AXIS_REASON_CONTROL_INVALID,
-  GIMBAL_AXIS_REASON_INPUT_HOLD
+  GIMBAL_AXIS_REASON_NONE = 0, /* 本周期无附加诊断。 */
+  GIMBAL_AXIS_REASON_SOFT_MIN, /* 反馈在软件下界或之外。 */
+  GIMBAL_AXIS_REASON_SOFT_MAX, /* 反馈在软件上界或之外。 */
+  GIMBAL_AXIS_REASON_FEEDBACK_LOST, /* 反馈无效或超过 HAL ms 期限。 */
+  GIMBAL_AXIS_REASON_CALIBRATION_INVALID, /* 标定未确认或 min<center<max 不成立。 */
+  GIMBAL_AXIS_REASON_TARGET_INVALID, /* 固定目标无效或越界。 */
+  GIMBAL_AXIS_REASON_CONTROL_INVALID, /* 控制参数、输入或周期非法。 */
+  GIMBAL_AXIS_REASON_INPUT_HOLD /* 零速度或输入失效；保持位置。 */
 } GimbalAxis_ReasonTypeDef;
 
 typedef struct {
@@ -67,35 +66,64 @@ typedef struct {
   bool feedback_lost; /* 曾经掉线，恢复首周期先清理控制历史。 */
 } GimbalAxis_HandleTypeDef;
 
-/** @brief 初始化一个独立云台轴；仅任务上下文调用。 */
+/**
+ * @brief 复制配置并注册独立 GM6020 轴。
+ * @param axis 持久轴对象；每个任务独占一个。
+ * @param config CAN、标定和控制参数；先完成板级 CAN 初始化。
+ * @retval true 已注册；false 空指针或驱动注册失败。标定/增益许可另存于对象。
+ * @note 仅所属任务首次调用。注册成功不代表已收到反馈或允许闭环。
+ */
 bool GimbalAxis_Init(GimbalAxis_HandleTypeDef *axis,
                      const GimbalAxis_ConfigTypeDef *config);
 
-/** @brief 执行一个相对速度命令周期；无效/过期命令按零速度保持当前位置。 */
+/**
+ * @brief 按相对速度推进一个正式闭环周期。
+ * @param axis 已注册轴对象。
+ * @param command 速度 ±1000‰；空、失效或越界时按零速度保持。
+ * @param now_ms HAL_GetTick 当前 ms；与反馈时间戳同源。
+ * @param dt_ms 控制周期 ms；必须大于 0。
+ * @retval None；周期输出写入 axis->cycle，反馈或参数失效时发零电流。
+ * @note 仅所属任务调用。每周期只取一份反馈快照，不等待 CAN 发送完成。
+ */
 void GimbalAxis_RunCycle(GimbalAxis_HandleTypeDef *axis,
                          const Gimbal_CommandTypeDef *command,
                          uint32_t now_ms, uint32_t dt_ms);
 
-/** @brief 显式发送零电流并清除输出许可；反馈掉线和初始化失败使用。 */
-void GimbalAxis_RunDisabledCycle(GimbalAxis_HandleTypeDef *axis,
-                                 uint32_t now_ms);
-
-/** @brief 执行固定目标角度周期；与正式模式共用控制和软件限位。 */
+/**
+ * @brief 使用正式控制器保持固定角度。
+ * @param axis 已注册轴对象。
+ * @param target_angle_raw 标定范围内的连续 count；越界发零电流。
+ * @param now_ms HAL 当前 ms；用于反馈年龄。
+ * @param dt_ms 控制周期 ms；必须大于 0。
+ * @retval None；周期结果写入 axis->cycle。
+ * @note 仅所属任务调用。固定目标和相对速度模式同周期不能同时执行。
+ */
 void GimbalAxis_RunFixedTarget(GimbalAxis_HandleTypeDef *axis,
                                int32_t target_angle_raw,
                                uint32_t now_ms, uint32_t dt_ms);
 
-/** @brief 发送本轴零电流，返回值仅表示 HAL 是否接受聚合帧。 */
+/**
+ * @brief 关闭本轴输出许可并提交零电流聚合帧。
+ * @param axis 已注册轴对象。
+ * @retval true HAL 已接受帧；false 句柄无效、邮箱忙或 HAL 失败。
+ * @note 仅所属任务调用。失败仍保留零目标；提交成功不证明电调已停止。
+ */
 bool GimbalAxis_SendZero(GimbalAxis_HandleTypeDef *axis);
 
-/** @brief 非阻塞输出本周期诊断；只读取 cycle 中的同一份快照。 */
-bool GimbalAxis_TryLog(GimbalAxis_HandleTypeDef *axis,
-                       const char *label, int16_t command_permille);
-
-/** @brief 返回阶段中文名称。 */
+/**
+ * @brief 取得阶段中文名称。
+ * @param phase 当前阶段枚举；未知值按初始化描述。
+ * @retval 静态只读字符串；不能修改或释放。
+ * @note 纯查询，无硬件或共享状态操作。
+ */
 const char *GimbalAxis_PhaseName(GimbalAxis_PhaseTypeDef phase);
 
-/** @brief 返回诊断原因中文名称。 */
+/**
+ * @brief 取得诊断原因中文名称。
+ * @param reason 当前原因枚举；未知值按无原因描述。
+ * @retval 静态只读字符串；不能修改或释放。
+ * @note 纯查询，无硬件或共享状态操作。
+ */
 const char *GimbalAxis_ReasonName(GimbalAxis_ReasonTypeDef reason);
 
 #endif /* GIMBAL_AXIS_H（防止轴运行时接口被重复包含） */

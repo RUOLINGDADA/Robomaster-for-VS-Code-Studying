@@ -2,124 +2,106 @@
 
 ## 目标与边界
 
-供弹任务只管理本项目唯一的 M2006 供弹电机，默认 C610 电调 ID 为 1，反馈帧为 `0x201`。硬件调参模式由驱动同级的 C610 自循环函数负责上弹/停止/下弹/停止；正式路径等待真实供弹命令接入，没有凭空加入未经台架标定的堵转算法。
+`task_feed_motor` 管理唯一的 C610/M2006 供弹电机和两个 C615 摩擦轮。任务不创建新的
+FreeRTOS 对象。DBUS 任务发布鼠标左键命令，供弹任务读取带 HAL 毫秒时间戳的命令快照，
+并在同一周期完成 PWM、角度控制和 CAN 聚合发送。
 
-任务结构与 Yaw 保持一致：入口只做周期调度，硬件测试函数负责调参阶段，命令/控制文件保留正式命令接入边界，运行时组合 C610 和日志。关闭硬件测试后，当前因尚未接入真实供弹命令而保持零输出。
+正式路径不实现堵转检测、热量限制或弹丸计数。C610 反馈必须新鲜，DBUS 必须在线；任一
+安全条件失败时，M2006 电流为零，C615 立即写入 1000 us。左键释放且通信仍在线时，
+C615 使用 300 ms 斜坡返回停止值。
 
 ## 文件职责
 
 ```text
-Core/Inc/task/task_feed_motor/task_feed_motor.h
-Core/Src/task/task_feed_motor/task_feed_motor.c             # 入口和 2 ms 调度
-Core/Inc/task/task_feed_motor/task_feed_motor_command.h
-Core/Src/task/task_feed_motor/task_feed_motor_command.c     # 正式命令默认配置
-Core/Inc/task/task_feed_motor/task_feed_motor_control.h
-Core/Src/task/task_feed_motor/task_feed_motor_control.c     # 阶段状态机和目标电流
-Core/Inc/task/task_feed_motor/task_feed_motor_runtime.h
-Core/Src/task/task_feed_motor/task_feed_motor_runtime.c     # 驱动/控制组合
+Core/Inc/task/task_feed_motor/task_feed_motor_config.h    # 角度、时序和电流配置
+Core/Inc/task/task_feed_motor/task_feed_motor_command.h   # DBUS 命令邮箱接口
+Core/Src/task/task_feed_motor/task_feed_motor_command.c   # 命令快照和 100 ms 超时
+Core/Inc/task/task_feed_motor/task_feed_motor_control.h   # 预旋、步进和间隔状态
+Core/Src/task/task_feed_motor/task_feed_motor_control.c   # P 控制与到位确认
+Core/Inc/task/task_feed_motor/task_feed_motor_runtime.h   # 硬件组合接口
+Core/Src/task/task_feed_motor/task_feed_motor_runtime.c   # C615、C610 和日志组合
+Core/Src/task/task_feed_motor/task_feed_motor.c            # 2 ms FreeRTOS 调度入口
 ```
 
-## 状态流程
+## 状态机
 
 ```text
-WAIT_FEEDBACK
-    ↓ 收到真实 0x201 反馈
-UP (+700)
-    ↓ 500 ms
-STOP_AFTER_UP (0)
-    ↓ 500 ms
-DOWN (-500)
-    ↓ 500 ms
-STOP_AFTER_DOWN (0)
-    └────────────── 回到 UP
+STOP
+  └─ DBUS 在线且左键按下 → SPINUP
+SPINUP
+  └─ 按下起经过 300 ms 且双 C615 到达 1800 us → ADVANCE
+ADVANCE
+  ├─ 目标误差 ≤ 65 count 且 |速度| ≤ 10 rpm，连续 20 ms → INTERVAL
+  └─ 其它情况 → P 控制输出
+INTERVAL
+  └─ 等待 100 ms → ADVANCE（以已完成目标为下一发起点）
+任一状态
+  └─ DBUS 离线、命令过期、反馈过期、初始化失败或左键释放 → STOP
 ```
 
-停止阶段用于释放惯性和齿轮间隙，避免正负电流瞬时反向。所有电流每 2 ms 聚合发送一次，反馈超时后回到 `WAIT_FEEDBACK` 并持续发送零电流。
+预旋时间从左键命令生效开始计算。两个 PWM 脉宽都到达活动值后，才允许 M2006 进入
+第一步。下一发使用上一发的目标角度加 409 count；目标误差在状态切换后同一周期重新
+计算，避免使用上一发误差产生短暂的错误电流。
 
-## 重要 Bug 修复
+## 输入与时间
 
-旧实现只用 `state != OFFLINE` 判断在线。初始化时 `last_feedback_tick` 为 0，如果系统启动后的前 100 ms 内还没有收到 CAN 帧，时间差可能仍小于超时阈值，导致驱动错误报告 `online=1`。任务因此可能把“尚未收到反馈”误判成已在线，日志表现为 `online=1 phase=wait_feedback` 或提前使能。
+- 命令邮箱由 `task_dbus` 写入、`task_feed_motor` 读取。短临界区保护多个字段；邮箱只
+  保存最新命令，不积压旧鼠标状态。
+- 命令时间戳来自合法 DBUS DMA 帧接收时刻，100 ms 内没有新命令即失效。时间戳 0 ms
+  仍可表示真实首帧。
+- CAN 反馈时间戳由 `HAL_GetTick()` 写入和比较。阶段计时使用 FreeRTOS Tick，并在比较
+  前通过 `pdMS_TO_TICKS()` 转换。两个时基不能混用。
+- 任务使用 `vTaskDelayUntil()` 保持 2 ms 周期。PWM 不使用 TIM1 中断。
 
-现在 C610 句柄增加 `feedback_received`：只有收到至少一帧合法反馈并且没有超时才算在线；超时同时关闭输出。日志增加 `feedback=0/1` 和 `age_ms`，可以区分“从未收到反馈”和“收到过但已掉线”。
+## 公开配置
 
-## 时间基准
+| 宏 | 单位/协议 | 默认值 | 调整影响 |
+|---|---|---:|---|
+| `FEED_MOTOR_ID` | CAN1 电调 ID；反馈 `0x201`，控制 `0x200` | 1 | ID 错误会一直离线 |
+| `FEED_MOTOR_STEP_COUNTS` | M2006 电机轴 count/发 | 409 | 增大步距会降低供弹频率并可能撞齿 |
+| `FEED_MOTOR_WINDOW_COUNTS` | 位置误差 count | 65 | 增大可提前判定到位 |
+| `FEED_MOTOR_READY_SPEED_RPM` | 电机轴 rpm | 10 | 增大会提高惯性误判 |
+| `FEED_MOTOR_SETTLE_MS` | 到位确认 ms | 20 | 减小会增加噪声误判 |
+| `FEED_MOTOR_SHOT_INTERVAL_MS` | 发射间隔 ms | 100 | 减小会提高供弹频率 |
+| `FEED_MOTOR_SPINUP_MS` | 预旋 ms | 300 | 减小会在摩擦轮未稳时拨弹 |
+| `FEED_MOTOR_POSITION_KP` | C610 raw/count | 2.0 | 增大会加快动作并增加过冲 |
+| `FEED_MOTOR_MAX_CURRENT_RAW` | C610 raw | 700 | 增大会增加力矩和温升 |
+| `FEED_MOTOR_FEEDBACK_SIGN` | 逻辑角度/速度符号，±1 | +1 | 方向错误会使误差闭环反向 |
+| `FEED_MOTOR_SNAIL_STOP_PULSE_US` | PWM us | 1000 | 停转异常时重新校准 |
+| `FEED_MOTOR_SNAIL_MAX_PULSE_US` | PWM us | 1550 | 正式运行上限；沿用整车例程 `FRIC_UP` |
+| `FEED_MOTOR_SNAIL_ACTIVE_PULSE_US` | PWM us | 1520 | 常规活动值；沿用整车例程 `FRIC_DOWN` |
+| `FEED_MOTOR_SNAIL_RAMP_TIME_MS` | ms | 300 | 减小会增加启动冲击 |
+| `FEED_MOTOR_CURRENT_SIGN` | 逻辑电流符号，±1 | +1 | 方向错误会使 M2006 反向运动 |
 
-- `HAL_GetTick()`：CAN ISR 写入反馈时间，运行时传给 `C610_M2006_Process()` 判断超时。
-- FreeRTOS Tick：阶段起点、阶段持续时间和日志限频。配置结构里的 `*_time_ms`
-  和 `log_period_ms` 面向调试人员使用毫秒保存；控制层和运行时在比较前分别用
-  `pdMS_TO_TICKS()` 转成 Tick，不能把两个单位混在一次减法中。
-- `vTaskDelayUntil()`：任务固定 2 ms 唤醒周期。
+所有数值都是待台架验证的起点。先确认 CAN ID、反馈符号和电流符号，再调整步长、窗口
+和增益。必须在可急停台架上验证拨弹盘齿数、实际每发角度、方向、电流和温升。
 
-两种时间不能直接相减。当前 FreeRTOS 配置为 1 kHz，只是转换结果恰好通常等于
-毫秒数；如果以后修改 `configTICK_RATE_HZ`，阶段和日志仍应保持真实的毫秒语义。
-阶段时间使用 `now_tick - phase_start_tick` 的无符号差值，因此短时间间隔跨过 Tick
-回绕也能正常比较；不要把 `HAL_GetTick()` 的时间戳写入阶段起点。
+## 独立硬件测试
 
-## 各阶段的意义
+### C615 摩擦轮独立测试
 
-- `WAIT_FEEDBACK`：尚未收到合法 `0x201` 反馈，确认 CAN 接收、ID 和驱动注册前强制零输出。
-- `UP`：用较小的正向原始电流验证上弹方向；阶段起点在第一帧有效反馈到达后记录。
-- `STOP_AFTER_UP`：上弹后短暂卸力，给惯性和齿轮间隙留出缓冲，避免马上反向顶齿。
-- `DOWN`：用较小的负向原始电流验证下弹方向，持续时间可独立调整。
-- `STOP_AFTER_DOWN`：下弹后再次归零，然后从 `UP` 开始下一轮；单独命名便于日志定位换向阶段。
+测试头文件为 `Core/Inc/bsp/snail_2305/test_snail_2305.h`。将其中
+`SNAIL_2305_TEST_ENABLE` 改为 `1` 后重新编译。它是独立于
+`FEED_MOTOR_SNAIL_MODE` 的 C615 测试开关；开启时必须保持 `FEED_MOTOR_SNAIL_MODE=0`。
+该模式只初始化 PE9/TIM1_CH1
+和 PE11/TIM1_CH2，不注册 C610，不要求 M2006 反馈，也不读取 DBUS 左键。
+两路先输出停止脉宽 3000 ms，再从停止脉宽 Ramp 到活动脉宽，保持设定时间，再 Ramp 回停止值。
+拆除拨弹机构，先低活动脉宽上电，并准备硬件急停。测试完成后恢复为 `0`。
 
-任务每 2 ms 刷新一次聚合 CAN 控制帧，阶段计时、日志限频和任务唤醒分别使用各自
-的 Tick 变量。这样日志不会挤占控制周期，阶段切换也不会因为串口发送耗时而漂移。
+测试用的停止值、活动值、最大值、Ramp、保持时间和日志周期都在该测试头文件中；
+正式供弹仍由本任务的 C615 配置控制。该模式用于区分“PWM/接线问题”和“DBUS/CAN
+安全门问题”，不能作为正式发射入口。
 
-## 参数调整
-
-默认值集中在 `task_feed_motor_command.c`：
-
-- 电机 ID：`1`
-- 上弹电流：`+700`
-- 下弹电流：`-500`
-- 上弹/下弹时间：`500 ms`
-- 换向停止时间：`500 ms`
-- 日志间隔：`500 ms`
-
-这些是低电流测试起点。实机上方向相反时只调整上、下弹电流的符号；第一次上电必须有人值守并准备急停，不能把测试值当作最终供弹参数。
-
-## 日志
-
-日志在任务上下文限频输出：
-
-```text
-[供弹] 在线=1 反馈有效=1 阶段=上弹 角度=... 转速=...
-      反馈电流=... 目标电流=... 输出=1 反馈年龄=...
-```
-
-`feedback=0` 表示从未收到合法反馈；`feedback=1 online=0` 表示曾经收到反馈但当前已经超时。这样不会再把初始化阶段的零时间戳误认为真实在线。
-
-日志、控制和 CAN 接收的上下文必须分开：`HAL_CAN_RxFifo0MsgPendingCallback()` 只负责
-把反馈帧交给 C610 驱动，不能在 ISR 中格式化字符串或等待 UART；`FeedMotor_RuntimeRunCycle()`
-在任务上下文里读取反馈、更新阶段、发送聚合帧并限频打印。`C610_M2006_SendAll()`
-每轮刷新目标电流，因为电调不会永久保存上一帧的控制意图。
-
-## 接入前提与文件边界
-
-- CAN1 已由 CubeMX 初始化、启动并打开 FIFO0 pending 中断，过滤器能够接收 `0x201`。
-- USART1 及其 TX DMA 已初始化，`usart_printf()` 可在任务上下文发送诊断文本。
-- C610 电调 ID 与 `FeedMotorCommand_GetDefault()` 返回的 `motor_id` 一致；当前默认值是 1。
-- 机械结构允许正、反两个方向运动，首次上电必须有人值守并准备断电或急停。
-- `freertos.c` 中的 `__weak task_feed_motor_entry()` 只做安全兜底；目录中的强定义由顶层
-  `CMakeLists.txt` 显式加入后覆盖它。重新生成 CubeMX 文件时不要把业务状态机放回生成文件。
-
-配置、阶段状态机和硬件组合分别通过公开头文件提供接口；反馈新鲜度由 C610 驱动层负责，其它任务不得直接修改
-`FeedMotor_RuntimeTypeDef` 内部字段。以后接入遥控器时，应在命令层增加输入适配，不要把
-遥控协议和 C610 CAN 帧解析混在任务入口。
+在任务配置中设置 `FEED_MOTOR_TEST_ENABLE=1` 后，入口改为驱动同级的
+`C610_M2006_TestSelfCycle_Run()`。该路径只执行上弹、停止、下弹、停止的非阻塞自循环，
+不与正式鼠标路径同时写电流。测试完成后恢复为 0。
+`FEED_MOTOR_TEST_UP/STOP/DOWN_TIME_MS`、`UP/DOWN_CURRENT_RAW` 和 `LOG_PERIOD_MS` 也在
+同一任务配置中。入口一次组装 `C610_M2006_TestConfigTypeDef` 并传入测试接口；测试驱动不读取 task 头。
+时间必须为 1~INT32_MAX ms，测试电流必须在 C610 的 ±10000 raw 范围内。
 
 ## 验证
 
-静态检查应确认入口、命令、控制和运行时源文件全部加入 CMake；ARM GCC `-Wall -Wextra -fsyntax-only` 可验证接口和类型。上弹方向、电流安全性、机械卡弹和温升必须在可急停台架实测。
-
-## 硬件调参测试
-
-供弹任务只保留驱动同级的
-`bsp/c610_m2006/test_c610_m2006_self_cycle.*`。将
-`C610_M2006_HARDWARE_TEST_ENABLE` 设为 1 后，任务入口直接运行上弹、停止、下弹、
-停止自循环；用户只需修改头文件中的阶段时间和原始电流。函数每次调用推进一个非阻塞
-步骤，反馈无效时强制零输出。调参完成后设为 0，进入正式供弹运行时；协议和算法边界
-验证不再建立永久测试文件。
-
-默认命令配置直接复用硬件测试头文件中的阶段和电流宏，后续正式命令接入时沿用已确认
-的调参值；当前正式路径因为尚未接入真实供弹命令仍保持零输出，反馈超时也由 C610 驱动层清零。
+软件行为由临时 HAL 替身验证：鼠标解析、叠加限幅、命令超时、角度回绕、预旋、到位、
+间隔、释放停机和反馈掉线均通过。Debug 构建使用 `cmake --preset Debug` 和
+`cmake --build --preset Debug` 验证。C615 行程、方向、M2006 每发角度、卡弹和温升仍需
+上板确认。

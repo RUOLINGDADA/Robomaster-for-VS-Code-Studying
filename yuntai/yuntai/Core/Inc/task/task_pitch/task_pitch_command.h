@@ -1,7 +1,15 @@
 /**
  * @file task_pitch_command.h
- * @brief Pitch 独立命令快照与超时（接口字段与 Yaw 一样，邮箱和控制历史各自独立）。
+ * @brief Pitch命令邮箱与 100 ms 有效期。
+ *
+ * DBUS 任务是唯一发布者；所属电机任务读取值副本，不保存外部指针。
+ * 接收帧时间戳使用 HAL ms。超时使用同源无符号差值，不靠 0 ms 判定无效。
+ * 本模块不访问 DMA，不写电机，不创建 RTOS 对象。
+ * 短任务临界区复制全部字段，避免许可、按钮或速度来自不同帧。ISR 不调用接口。
+ * 过期命令停止目标移动；正式 GimbalAxis 按零速度保持位置。
  */
+/* 调用链：DBUS 接收快照→Submit 值复制→所属任务 GetSnapshot→检查许可→运行时输出。
+ * 发布失败不修改旧邮箱；读取返回成功仅代表复制完成，不代表数据仍在线。禁止 ISR 发布或读取。 */
 #ifndef TASK_PITCH_COMMAND_H
 #define TASK_PITCH_COMMAND_H /* 防止 Pitch 命令类型重复定义。 */
 #include "app/gimbal/gimbal_command.h"
@@ -16,7 +24,7 @@ typedef Gimbal_CommandTypeDef Pitch_CommandTypeDef; /* -1000~1000‰ 速度、�
  */
 bool PitchCommand_Submit(const Pitch_CommandTypeDef *command);
 /**
- * @brief 获取一致命令并处理过期（过期 enabled=false，正式运行时必须零输出）。
+ * @brief 获取一致命令并处理过期（过期 enabled=false，正式运行时按零速度保持）。
  * @param now_ms HAL 当前 ms，与接收时间同源。
  * @param command 输出副本；禁用时速度为零，回中有效命令则 enabled=true。
  * @retval true 已复制；false 空指针，输出不变。

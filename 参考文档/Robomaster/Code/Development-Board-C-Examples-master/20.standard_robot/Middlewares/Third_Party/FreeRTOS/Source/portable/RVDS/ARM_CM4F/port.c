@@ -33,7 +33,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#ifndef __TARGET_FPU_VFP
+#if !defined(__TARGET_FPU_VFP) && !defined(__ARM_FP)
 	#error This port can only be used when the project options are configured to enable hardware floating point support.
 #endif
 
@@ -232,6 +232,23 @@ static void prvTaskExitError( void )
 }
 /*-----------------------------------------------------------*/
 
+#if defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6010050)
+__attribute__((naked)) void vPortSVCHandler( void )
+{
+    __asm volatile (
+        "ldr	r3, =pxCurrentTCB\n"
+        "ldr r1, [r3]\n"
+        "ldr r0, [r1]\n"
+        "ldmia r0!, {r4-r11, r14}\n"
+        "msr psp, r0\n"
+        "isb\n"
+        "mov r0, #0\n"
+        "msr	basepri, r0\n"
+        "bx r14\n"
+
+    );
+}
+#else
 __asm void vPortSVCHandler( void )
 {
 	PRESERVE8
@@ -248,8 +265,30 @@ __asm void vPortSVCHandler( void )
 	msr	basepri, r0
 	bx r14
 }
+#endif
 /*-----------------------------------------------------------*/
 
+#if defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6010050)
+static __attribute__((naked)) void prvStartFirstTask( void )
+{
+    __asm volatile (
+        "ldr r0, =0xE000ED08\n"
+        "ldr r0, [r0]\n"
+        "ldr r0, [r0]\n"
+        "msr msp, r0\n"
+        "mov r0, #0\n"
+        "msr control, r0\n"
+        "cpsie i\n"
+        "cpsie f\n"
+        "dsb\n"
+        "isb\n"
+        "svc 0\n"
+        "nop\n"
+        "nop\n"
+
+    );
+}
+#else
 __asm void prvStartFirstTask( void )
 {
 	PRESERVE8
@@ -276,8 +315,23 @@ __asm void prvStartFirstTask( void )
 	nop
 	nop
 }
+#endif
 /*-----------------------------------------------------------*/
 
+#if defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6010050)
+static __attribute__((naked)) void prvEnableVFP( void )
+{
+    __asm volatile (
+        "ldr.w r0, =0xE000ED88\n"
+        "ldr	r1, [r0]\n"
+        "orr	r1, r1, #( 0xf << 20 )\n"
+        "str r1, [r0]\n"
+        "bx	r14\n"
+        "nop\n"
+
+    );
+}
+#else
 __asm void prvEnableVFP( void )
 {
 	PRESERVE8
@@ -292,6 +346,7 @@ __asm void prvEnableVFP( void )
 	bx	r14
 	nop
 }
+#endif
 /*-----------------------------------------------------------*/
 
 /*
@@ -436,6 +491,48 @@ void vPortExitCritical( void )
 }
 /*-----------------------------------------------------------*/
 
+#if defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6010050)
+__attribute__((naked)) void xPortPendSVHandler( void )
+{
+    __asm volatile (
+        "mrs r0, psp\n"
+        "isb\n"
+        "ldr	r3, =pxCurrentTCB\n"
+        "ldr	r2, [r3]\n"
+        "tst r14, #0x10\n"
+        "it eq\n"
+        "vstmdbeq r0!, {s16-s31}\n"
+        "stmdb r0!, {r4-r11, r14}\n"
+        "str r0, [r2]\n"
+        "stmdb sp!, {r0, r3}\n"
+        "mov r0, %0\n"
+        "msr basepri, r0\n"
+        "dsb\n"
+        "isb\n"
+        "bl vTaskSwitchContext\n"
+        "mov r0, #0\n"
+        "msr basepri, r0\n"
+        "ldmia sp!, {r0, r3}\n"
+        "ldr r1, [r3]\n"
+        "ldr r0, [r1]\n"
+        "ldmia r0!, {r4-r11, r14}\n"
+        "tst r14, #0x10\n"
+        "it eq\n"
+        "vldmiaeq r0!, {s16-s31}\n"
+        "msr psp, r0\n"
+        "isb\n"
+#ifdef WORKAROUND_PMU_CM001
+#if WORKAROUND_PMU_CM001 == 1
+        "push { r14 }\n"
+        "pop { pc }\n"
+        "nop\n"
+#endif
+#endif
+        "bx r14\n"
+        :: "i" (configMAX_SYSCALL_INTERRUPT_PRIORITY)
+    );
+}
+#else
 __asm void xPortPendSVHandler( void )
 {
 	extern uxCriticalNesting;
@@ -496,6 +593,7 @@ __asm void xPortPendSVHandler( void )
 
 	bx r14
 }
+#endif
 /*-----------------------------------------------------------*/
 
 void xPortSysTickHandler( void )
@@ -550,8 +648,8 @@ void xPortSysTickHandler( void )
 		/* Enter a critical section but don't use the taskENTER_CRITICAL()
 		method as that will mask interrupts that should exit sleep mode. */
 		__disable_irq();
-		__dsb( portSY_FULL_READ_WRITE );
-		__isb( portSY_FULL_READ_WRITE );
+		__DSB();
+		__ISB();
 
 		/* If a context switch is pending or a task is waiting for the scheduler
 		to be unsuspended then abandon the low power entry. */
@@ -593,9 +691,9 @@ void xPortSysTickHandler( void )
 			configPRE_SLEEP_PROCESSING( &xModifiableIdleTime );
 			if( xModifiableIdleTime > 0 )
 			{
-				__dsb( portSY_FULL_READ_WRITE );
-				__wfi();
-				__isb( portSY_FULL_READ_WRITE );
+				__DSB();
+				__WFI();
+				__ISB();
 			}
 			configPOST_SLEEP_PROCESSING( &xExpectedIdleTime );
 
@@ -603,16 +701,16 @@ void xPortSysTickHandler( void )
 			out of sleep mode to execute immediately.  see comments above
 			__disable_interrupt() call above. */
 			__enable_irq();
-			__dsb( portSY_FULL_READ_WRITE );
-			__isb( portSY_FULL_READ_WRITE );
+			__DSB();
+			__ISB();
 
 			/* Disable interrupts again because the clock is about to be stopped
 			and interrupts that execute while the clock is stopped will increase
 			any slippage between the time maintained by the RTOS and calendar
 			time. */
 			__disable_irq();
-			__dsb( portSY_FULL_READ_WRITE );
-			__isb( portSY_FULL_READ_WRITE );
+			__DSB();
+			__ISB();
 
 			/* Disable the SysTick clock without reading the
 			portNVIC_SYSTICK_CTRL_REG register to ensure the
@@ -716,6 +814,16 @@ void xPortSysTickHandler( void )
 #endif /* configOVERRIDE_DEFAULT_TICK_CONFIGURATION */
 /*-----------------------------------------------------------*/
 
+#if defined(__ARMCC_VERSION) && (__ARMCC_VERSION >= 6010050)
+__attribute__((naked)) uint32_t vPortGetIPSR( void )
+{
+    __asm volatile (
+        "mrs r0, ipsr\n"
+        "bx r14\n"
+
+    );
+}
+#else
 __asm uint32_t vPortGetIPSR( void )
 {
 	PRESERVE8
@@ -723,6 +831,7 @@ __asm uint32_t vPortGetIPSR( void )
 	mrs r0, ipsr
 	bx r14
 }
+#endif
 /*-----------------------------------------------------------*/
 
 #if( configASSERT_DEFINED == 1 )

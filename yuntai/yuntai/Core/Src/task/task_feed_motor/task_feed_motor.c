@@ -19,26 +19,16 @@
 #include "task/task_feed_motor/task_feed_motor.h"
 #include "task/task_feed_motor/task_feed_motor_runtime.h"
 #include "task/task_feed_motor/task_feed_motor_config.h"
-#include "bsp/c610_m2006/test_c610_m2006_self_cycle.h"
+#include "bsp/c610_m2006/test_c610_m2006_angle_step.h"
 #include "bsp/snail_2305/test_snail_2305.h"
-#include "bsp/snail_2305/test_snail_2305_calibration.h"
+#include "bsp/c610_m2006/c610_m2006.h"
+#include "can.h"
 #include "tim.h"
 #include "app/log/log.h"
 
-#if FEED_MOTOR_TEST_ENABLE && (SNAIL_2305_TEST_ENABLE || \
-                               FEED_MOTOR_SNAIL_MODE != FEED_MOTOR_SNAIL_MODE_FORMAL)
-#error "C610 and Snail 2305 tests cannot run together"
+#if FEED_MOTOR_ANGLE_STEP_TEST_ENABLE && SNAIL_2305_TEST_ENABLE
+#error "C610 angle step test and Snail 2305 PWM test cannot run together"
 #endif
-#if SNAIL_2305_TEST_ENABLE && \
-    FEED_MOTOR_SNAIL_MODE != FEED_MOTOR_SNAIL_MODE_FORMAL
-#error "SNAIL_2305_TEST_ENABLE requires FEED_MOTOR_SNAIL_MODE=0"
-#endif
-
-_Static_assert(FEED_MOTOR_TEST_UP_CURRENT_RAW >= C610_M2006_CURRENT_RAW_MIN &&
-               FEED_MOTOR_TEST_UP_CURRENT_RAW <= C610_M2006_CURRENT_RAW_MAX &&
-               FEED_MOTOR_TEST_DOWN_CURRENT_RAW >= C610_M2006_CURRENT_RAW_MIN &&
-               FEED_MOTOR_TEST_DOWN_CURRENT_RAW <= C610_M2006_CURRENT_RAW_MAX,
-               "test currents exceed C610 protocol range");
 
 /**
  * @brief  唯一 M2006 供弹电机的 FreeRTOS 任务入口（按固定周期推进控制）。
@@ -48,13 +38,31 @@ _Static_assert(FEED_MOTOR_TEST_UP_CURRENT_RAW >= C610_M2006_CURRENT_RAW_MIN &&
  */
 void task_feed_motor_entry(void *argument) {
   (void)argument;
-#if FEED_MOTOR_SNAIL_MODE != FEED_MOTOR_SNAIL_MODE_FORMAL
-  static Snail2305_CalibrationStateTypeDef snail_calibration;
-  while (!Snail2305_Calibration_Init(&snail_calibration, &htim1)) {
-    (void)LOG_TRY_PRINTF(LOG_CATEGORY_FEED_MOTOR_TEST,
-        "[C615校准] TIM1 或 PWM 初始化失败，保持最小脉宽并重试\r\n");
-    vTaskDelay(pdMS_TO_TICKS(FEED_MOTOR_INIT_RETRY_MS));
+#if FEED_MOTOR_ANGLE_STEP_TEST_ENABLE
+  static C610_M2006_HandleTypeDef motor;
+  static C610_M2006_AngleStepStateTypeDef test_state;
+  static const C610_M2006_AngleStepConfigTypeDef test_config = {
+      .enabled = true,
+      .feedback_sign = FEED_MOTOR_ANGLE_STEP_TEST_FEEDBACK_SIGN,
+      .log_period_ms = FEED_MOTOR_ANGLE_STEP_TEST_LOG_PERIOD_MS,
+  };
+  const C610_M2006_ConfigTypeDef motor_config = {
+      .hcan = &hcan1,
+      .motor_id = FEED_MOTOR_ID,
+      .feedback_timeout_ms = C610_M2006_FEEDBACK_TIMEOUT_MS,
+  };
+  bool motor_initialized = false;
+  while (!motor_initialized) {
+    motor_initialized = C610_M2006_Init(&motor, &motor_config);
+    if (!motor_initialized) {
+      (void)LOG_TRY_PRINTF(LOG_CATEGORY_FEED_MOTOR_TEST,
+          "[C610角度步长] 初始化失败，保持零电流并重试\r\n");
+      vTaskDelay(pdMS_TO_TICKS(FEED_MOTOR_INIT_RETRY_MS));
+    }
   }
+  (void)C610_M2006_SetOutputEnabled(&motor, false);
+  (void)C610_M2006_SetCurrent(&motor, 0);
+  (void)C610_M2006_SendAll(&hcan1);
   TickType_t last_wake_tick = xTaskGetTickCount();
   for (;;) {
     const TickType_t now_tick = xTaskGetTickCount();
@@ -63,7 +71,8 @@ void task_feed_motor_entry(void *argument) {
     if (dt_ms == 0U) {
       dt_ms = FEED_MOTOR_TASK_PERIOD_MS;
     }
-    Snail2305_Calibration_RunCycle(&snail_calibration, HAL_GetTick(), dt_ms);
+    C610_M2006_AngleStep_RunCycle(&motor, &test_state, &test_config,
+                                  HAL_GetTick(), dt_ms);
     vTaskDelayUntil(&last_wake_tick, pdMS_TO_TICKS(FEED_MOTOR_TASK_PERIOD_MS));
   }
 #elif SNAIL_2305_TEST_ENABLE
@@ -86,17 +95,6 @@ void task_feed_motor_entry(void *argument) {
   }
 #else
   static FeedMotor_RuntimeTypeDef runtime; /* 唯一供弹任务独占，零初始化；PWM 与 CAN 句柄不可复制到其它实例。 */
-#if FEED_MOTOR_TEST_ENABLE
-  static const C610_M2006_TestConfigTypeDef test_config = {
-      .enabled = true,
-      .up_time_ms = FEED_MOTOR_TEST_UP_TIME_MS,
-      .stop_time_ms = FEED_MOTOR_TEST_STOP_TIME_MS,
-      .down_time_ms = FEED_MOTOR_TEST_DOWN_TIME_MS,
-      .up_current_raw = FEED_MOTOR_TEST_UP_CURRENT_RAW,
-      .down_current_raw = FEED_MOTOR_TEST_DOWN_CURRENT_RAW,
-      .log_period_ms = FEED_MOTOR_TEST_LOG_PERIOD_MS,
-  };
-#endif
 
   /* 三个驱动全部初始化成功才允许进入周期控制。部分成功时运行时仍提交停止值。
    * 重试必须复用同一对象，不能重置已加入 CAN 注册表的句柄。（成功一半也不能发射。） */
@@ -108,18 +106,9 @@ void task_feed_motor_entry(void *argument) {
   TickType_t last_wake_tick = xTaskGetTickCount(); /* 初始化和重试结束后才开始周期调度，避免追赶启动耗时。 */
   for (;;) {
     /* HAL Tick 用于反馈超时，FreeRTOS Tick 只用于任务调度和阶段计时（两种时间不能混算）。 */
-    /* 测试宏为 1 时只执行 M2006 自循环；正式 PWM Ramp 不执行，摩擦轮保留初始化停止值。
-     * 自循环不读取鼠标左键；该宏只能在显式台架调试时启用。 */
-#if FEED_MOTOR_TEST_ENABLE
-    /* 硬件调参模式：唯一供弹电机执行非阻塞上弹/停止/下弹自循环（每次只推进一小步）。 */
-    C610_M2006_TestSelfCycle_Run(&runtime.motor, &test_config, HAL_GetTick());
-#else
-    /*
-     * 正式模式：执行供弹命令和阶段控制；测试自循环不进入此路径（两条路径不会同时写电流）。
-     */
+    /* 正式模式：执行供弹命令和阶段控制。角度步长测试和 C615 测试均在上面的互斥分支。 */
     FeedMotor_RuntimeRunCycle(&runtime, HAL_GetTick(),
                               xTaskGetTickCount());
-#endif
     /* 绝对唤醒点避免一次日志或 HAL 调用耗时把 2 ms 周期逐步推迟。 */
     /* 只延迟当前任务；CAN ISR 仍更新反馈。运行时按实际 Tick 差换算 dt_ms，
      * 状态持续时间也按 Tick 差判断，不按循环次数计时。（周期变化不能改变毫秒含义。） */

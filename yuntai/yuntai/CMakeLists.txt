@@ -56,10 +56,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/bsp/gm6020/gm6020.c
     Core/Src/bsp/snail_2305/snail_2305.c
     Core/Src/bsp/snail_2305/test_snail_2305.c
-    Core/Src/bsp/snail_2305/test_snail_2305_calibration.c
+    Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c
     Core/Src/bsp/can/can_rx_dispatch.c
     Core/Src/bsp/dbus/dbus.c
-    Core/Src/bsp/c610_m2006/test_c610_m2006_self_cycle.c
     Core/Src/bsp/gm6020/test_gm6020_calibration.c
     Core/Src/bsp/gm6020/test_gm6020_angle_loop.c
     Core/Src/task/task_feed_motor/task_feed_motor.c

@@ -1,107 +1,117 @@
 # 供弹电机任务
 
-## 目标与边界
-
-`task_feed_motor` 管理唯一的 C610/M2006 供弹电机和两个 C615 摩擦轮。任务不创建新的
+`task_feed_motor` 管理唯一 C610/M2006 供弹电机和两个 C615 摩擦轮。任务不创建新的
 FreeRTOS 对象。DBUS 任务发布鼠标左键命令，供弹任务读取带 HAL 毫秒时间戳的命令快照，
-并在同一周期完成 PWM、角度控制和 CAN 聚合发送。
+并在同一周期完成 PWM、供弹状态机、CAN 聚合发送和日志。
 
-正式路径不实现堵转检测、热量限制或弹丸计数。C610 反馈必须新鲜，DBUS 必须在线；任一
-安全条件失败时，M2006 电流为零，C615 立即写入 1000 us。左键释放且通信仍在线时，
-C615 使用 300 ms 斜坡返回停止值。
+正式路径不实现卡弹锁存、停滞超时故障、热量限制或弹丸计数。单发使用连续反馈位置停滞
+确认决定何时停止上弹并开始单发保持；摩擦轮在上弹前预旋。这不是机械卡弹诊断。命令超时或反馈失效时 M2006 立即清零，
+C615 立即写停止脉宽。短按释放不会中断当前单发；连发释放当周期清零 M2006 电流，C615 目标转为停止脉宽并按 Ramp 减速。
 
 ## 文件职责
 
 ```text
-Core/Inc/task/task_feed_motor/task_feed_motor_config.h    # 角度、时序和电流配置
+Core/Inc/task/task_feed_motor/task_feed_motor_config.h    # 电流、停滞、按键和 PWM 参数
 Core/Inc/task/task_feed_motor/task_feed_motor_command.h   # DBUS 命令邮箱接口
 Core/Src/task/task_feed_motor/task_feed_motor_command.c   # 命令快照和 100 ms 超时
-Core/Inc/task/task_feed_motor/task_feed_motor_control.h   # 预旋、步进和间隔状态
-Core/Src/task/task_feed_motor/task_feed_motor_control.c   # P 控制与到位确认
-Core/Inc/task/task_feed_motor/task_feed_motor_runtime.h   # 硬件组合接口
-Core/Src/task/task_feed_motor/task_feed_motor_runtime.c   # C615、C610 和日志组合
-Core/Src/task/task_feed_motor/task_feed_motor.c            # 2 ms FreeRTOS 调度入口
+Core/Inc/task/task_feed_motor/task_feed_motor_control.h   # 单发/连发状态和停滞算法
+Core/Src/task/task_feed_motor/task_feed_motor_control.c   # 非阻塞状态机
+Core/Inc/task/task_feed_motor/task_feed_motor_runtime.h   # C615/C610 硬件组合接口
+Core/Src/task/task_feed_motor/task_feed_motor_runtime.c   # 反馈快照、PWM、CAN 和日志
+Core/Src/task/task_feed_motor/task_feed_motor.c           # 2 ms FreeRTOS 调度入口
 ```
 
 ## 状态机
 
 ```text
 STOP
-  └─ DBUS 在线且左键按下 → SPINUP
-SPINUP
-  └─ 按下起经过 300 ms 且双 C615 到达 1800 us → ADVANCE
-ADVANCE
-  ├─ 目标误差 ≤ 65 count 且 |速度| ≤ 10 rpm，连续 20 ms → INTERVAL
-  └─ 其它情况 → P 控制输出
-INTERVAL
-  └─ 等待 100 ms → ADVANCE（以已完成目标为下一发起点）
-任一状态
-  └─ DBUS 离线、命令过期、反馈过期、初始化失败或左键释放 → STOP
+  └─ 左键按下沿且 DBUS/CAN 安全门有效 → FRIC_SPINUP
+FRIC_SPINUP（首发预旋）
+  └─ 双 C615 达到活动 PWM → FEED
+FEED
+  └─ C615 保持活动；位置变化 ≤ 20 count → FEED_SETTLE
+FEED_SETTLE
+  ├─ C615 保持活动；位置重新变化 → FEED
+  └─ 停滞连续 100 ms → SINGLE_FIRE
+SINGLE_FIRE
+  └─ 保持 150 ms → WAIT_RELEASE 或 CONTINUOUS_FEED
+WAIT_RELEASE
+  ├─ 松键 → STOP
+  └─ 长按阈值达到且仍按住 → CONTINUOUS_FEED
+CONTINUOUS_FEED
+  └─ C610 与 C615 同时运行；松键/超时/反馈失效 → STOP
 ```
 
-预旋时间从左键命令生效开始计算。两个 PWM 脉宽都到达活动值后，才允许 M2006 进入
-第一步。下一发使用上一发的目标角度加 409 count；目标误差在状态切换后同一周期重新
-计算，避免使用上一发误差产生短暂的错误电流。
+单发先让两路 C615 预旋到活动 PWM，再驱动 C610 上弹；C610 上弹和停滞确认期间继续保持摩擦轮活动。
+长按阈值只设置 `continuous_requested`，不能打断第一发；
+第一发保持完成后才进入 `CONTINUOUS_FEED`。正式路径不再使用 `FEED_MOTOR_STEP_COUNTS`、
+位置 P 或每发角度目标。
 
-## 输入与时间
+## 算法和时序
 
-- 命令邮箱由 `task_dbus` 写入、`task_feed_motor` 读取。短临界区保护多个字段；邮箱只
-  保存最新命令，不积压旧鼠标状态。
-- 命令时间戳来自合法 DBUS DMA 帧接收时刻，100 ms 内没有新命令即失效。时间戳 0 ms
-  仍可表示真实首帧。
-- CAN 反馈时间戳由 `HAL_GetTick()` 写入和比较。阶段计时使用 FreeRTOS Tick，并在比较
-  前通过 `pdMS_TO_TICKS()` 转换。两个时基不能混用。
-- 任务使用 `vTaskDelayUntil()` 保持 2 ms 周期。PWM 不使用 TIM1 中断。
+首发先进入 `FRIC_SPINUP`，两路 `pulse_us` 达到活动值后才进入 `FEED`。单发 `FEED`/`FEED_SETTLE`
+每个 2 ms 周期同时保持 C610 供弹电流和 C615 活动 PWM：
+
+```text
+delta_count = angle_count - last_position_count
+abs(delta_count) > FEED_MOTOR_STALL_COUNTS
+    → 记录新位置，清零停滞确认
+否则
+    → 累加 stall_elapsed_ms
+```
+
+位置连续不超过 `20 count` 达到 `100 ms` 后，停止 C610 并进入 `SINGLE_FIRE`。摩擦轮已经在上弹前预旋；若位置重新
+变化，回到 `FEED` 并重新确认。当前按需求不增加停滞超时故障，所以卡弹或传感器异常必须
+通过急停台架观察。
+
+进入首发 `FRIC_SPINUP` 后，两路 C615 通过正式 Ramp 到活动脉宽；两个 `pulse_us` 都达到活动值
+后才允许 C610 上弹。C615 没有转速反馈，CCR 到目标只表示 PWM 已写入，
+不等于摩擦轮真实转速稳定。
+
+停滞确认结束后，C610 当周期清零，两路 C615 保持活动 PWM `150 ms`。
+首发预旋使用现有 `FEED_MOTOR_SNAIL_RAMP_TIME_MS=300 ms`；当前不增加额外转速稳定等待。
+
+左键按下持续达到 `FEED_MOTOR_CONTINUOUS_PRESS_MS` 后，只设置连发意图。若当前单发尚未
+完成，仍按单发顺序执行；单发保持结束且左键仍按住时，进入 `CONTINUOUS_FEED`，C610 固定
+电流和 C615 活动 PWM 同时保持。连发不调用停滞判定。
 
 ## 公开配置
 
 | 宏 | 单位/协议 | 默认值 | 调整影响 |
 |---|---|---:|---|
-| `FEED_MOTOR_ID` | CAN1 电调 ID；反馈 `0x201`，控制 `0x200` | 1 | ID 错误会一直离线 |
-| `FEED_MOTOR_STEP_COUNTS` | M2006 电机轴 count/发 | 409 | 增大步距会降低供弹频率并可能撞齿 |
-| `FEED_MOTOR_WINDOW_COUNTS` | 位置误差 count | 65 | 增大可提前判定到位 |
-| `FEED_MOTOR_READY_SPEED_RPM` | 电机轴 rpm | 10 | 增大会提高惯性误判 |
-| `FEED_MOTOR_SETTLE_MS` | 到位确认 ms | 20 | 减小会增加噪声误判 |
-| `FEED_MOTOR_SHOT_INTERVAL_MS` | 发射间隔 ms | 100 | 减小会提高供弹频率 |
-| `FEED_MOTOR_SPINUP_MS` | 预旋 ms | 300 | 减小会在摩擦轮未稳时拨弹 |
-| `FEED_MOTOR_POSITION_KP` | C610 raw/count | 2.0 | 增大会加快动作并增加过冲 |
-| `FEED_MOTOR_MAX_CURRENT_RAW` | C610 raw | 700 | 增大会增加力矩和温升 |
-| `FEED_MOTOR_FEEDBACK_SIGN` | 逻辑角度/速度符号，±1 | +1 | 方向错误会使误差闭环反向 |
-| `FEED_MOTOR_SNAIL_STOP_PULSE_US` | PWM us | 1000 | 停转异常时重新校准 |
-| `FEED_MOTOR_SNAIL_MAX_PULSE_US` | PWM us | 1550 | 正式运行上限；沿用整车例程 `FRIC_UP` |
-| `FEED_MOTOR_SNAIL_ACTIVE_PULSE_US` | PWM us | 1520 | 常规活动值；沿用整车例程 `FRIC_DOWN` |
-| `FEED_MOTOR_SNAIL_RAMP_TIME_MS` | ms | 300 | 减小会增加启动冲击 |
-| `FEED_MOTOR_CURRENT_SIGN` | 逻辑电流符号，±1 | +1 | 方向错误会使 M2006 反向运动 |
+| `FEED_MOTOR_TASK_PERIOD_MS` | 任务周期 ms | 2 | 影响反馈采样和 PWM Ramp 推进 |
+| `FEED_MOTOR_COMMAND_TIMEOUT_MS` | DBUS 命令期限 ms | 100 | 过期立即停止两个电机 |
+| `FEED_MOTOR_STALL_COUNTS` | 停滞位置窗口 count | 20 | 增大可能提前判定转不动 |
+| `FEED_MOTOR_STALL_CONFIRM_MS` | 停滞确认 ms | 100 | 减小会增加未到位误判 |
+| `FEED_MOTOR_SINGLE_FIRE_HOLD_MS` | 单发摩擦轮保持 ms | 150 | 过短可能夹弹未出，过长增加空转 |
+| `FEED_MOTOR_CONTINUOUS_PRESS_MS` | 长按阈值 ms | 400 | 达到后首发完成再进入连发 |
+| `FEED_MOTOR_FEED_CURRENT_RAW` | M2006 供弹电流 raw | 700 | 增大力矩和温升 |
+| `FEED_MOTOR_MAX_CURRENT_RAW` | C610 电流上限 raw | 700 | 供弹电流安全上限，不超过 10000 |
+| `FEED_MOTOR_FEEDBACK_SIGN` | 角度/速度符号 | +1 | 改变停滞日志和连续角度方向 |
+| `FEED_MOTOR_CURRENT_SIGN` | 逻辑电流符号 | +1 | 改变 M2006 实际转动方向 |
+| `FEED_MOTOR_SNAIL_STOP_PULSE_US` | C615 停止脉宽 us | 1000 | 故障和停止路径直接写入 |
+| `FEED_MOTOR_SNAIL_ACTIVE_PULSE_US` | C615 活动脉宽 us | 1520 | 单发/连发摩擦轮目标；沿用参考工程 `FRIC_DOWN` |
+| `FEED_MOTOR_SNAIL_MAX_PULSE_US` | C615 上限 us | 1550 | 必须不小于活动值 |
+| `FEED_MOTOR_SNAIL_RAMP_TIME_MS` | PWM Ramp ms | 300 | 过短增加启动冲击 |
 
-所有数值都是待台架验证的起点。先确认 CAN ID、反馈符号和电流符号，再调整步长、窗口
-和增益。必须在可急停台架上验证拨弹盘齿数、实际每发角度、方向、电流和温升。
+所有数值都是待台架验证的起点。必须在可急停台架上确认 M2006 方向、停滞误判、C615 转向、
+单发保持时间、供弹能力和温升。
 
 ## 独立硬件测试
 
 ### C615 摩擦轮独立测试
 
-测试头文件为 `Core/Inc/bsp/snail_2305/test_snail_2305.h`。将其中
-`SNAIL_2305_TEST_ENABLE` 改为 `1` 后重新编译。它是独立于
-`FEED_MOTOR_SNAIL_MODE` 的 C615 测试开关；开启时必须保持 `FEED_MOTOR_SNAIL_MODE=0`。
-该模式只初始化 PE9/TIM1_CH1
-和 PE11/TIM1_CH2，不注册 C610，不要求 M2006 反馈，也不读取 DBUS 左键。
-两路先输出停止脉宽 3000 ms，再从停止脉宽 Ramp 到活动脉宽，保持设定时间，再 Ramp 回停止值。
-拆除拨弹机构，先低活动脉宽上电，并准备硬件急停。测试完成后恢复为 `0`。
+`Core/Inc/bsp/snail_2305/test_snail_2305.h` 的 `SNAIL_2305_TEST_ENABLE` 显式开启后，
+只初始化两路 PWM，不注册 C610、不读取 DBUS。测试完成后恢复为 `0`。
 
-测试用的停止值、活动值、最大值、Ramp、保持时间和日志周期都在该测试头文件中；
-正式供弹仍由本任务的 C615 配置控制。该模式用于区分“PWM/接线问题”和“DBUS/CAN
-安全门问题”，不能作为正式发射入口。
+### C610 手动角度反馈测试
 
-在任务配置中设置 `FEED_MOTOR_TEST_ENABLE=1` 后，入口改为驱动同级的
-`C610_M2006_TestSelfCycle_Run()`。该路径只执行上弹、停止、下弹、停止的非阻塞自循环，
-不与正式鼠标路径同时写电流。测试完成后恢复为 0。
-`FEED_MOTOR_TEST_UP/STOP/DOWN_TIME_MS`、`UP/DOWN_CURRENT_RAW` 和 `LOG_PERIOD_MS` 也在
-同一任务配置中。入口一次组装 `C610_M2006_TestConfigTypeDef` 并传入测试接口；测试驱动不读取 task 头。
-时间必须为 1~INT32_MAX ms，测试电流必须在 C610 的 ±10000 raw 范围内。
+`FEED_MOTOR_ANGLE_STEP_TEST_ENABLE=1` 后，只注册 C610、不启动 C615、不读取 DBUS，并始终
+提交零电流。首帧建立 `reference_count`，日志输出当前连续角度、相对基准和采样增量。
+该测试只确认反馈方向和连续角度，不再为正式控制提供步长参数。完成后必须恢复开关为 `0`。
 
 ## 验证
 
-软件行为由临时 HAL 替身验证：鼠标解析、叠加限幅、命令超时、角度回绕、预旋、到位、
-间隔、释放停机和反馈掉线均通过。Debug 构建使用 `cmake --preset Debug` 和
-`cmake --build --preset Debug` 验证。C615 行程、方向、M2006 每发角度、卡弹和温升仍需
-上板确认。
+软件验证应覆盖 DBUS 命令超时、短按/长按、停滞确认、单发摩擦轮顺序、单发保持、连发释放、
+反馈掉线和 C615 Ramp。默认正式构建、角度测试构建和 C615 独立测试构建均需通过 CMake；
+软件构建不能代替方向、卡弹、供弹能力和温升台架验证。

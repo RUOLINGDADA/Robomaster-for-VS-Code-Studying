@@ -19,6 +19,34 @@
 #include "app/log/log.h"
 #include <stddef.h>
 
+#define FEED_MOTOR_COUNT_TEXT_SIZE 24U /* int64_t 十进制文本最大长度，含符号和 NUL。 */
+
+#if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && LOG_TASK_ENABLE && LOG_FEED_MOTOR_ENABLE
+/**
+ * @brief 将供弹连续角度或目标 count 转成十进制文本。
+ * @param value 需要输出的有符号电机轴 count。
+ * @param text 输出缓冲区，至少 FEED_MOTOR_COUNT_TEXT_SIZE 字节。
+ * @retval None。手工转换避免目标端 printf 对 %lld 的支持差异。
+ */
+static void FeedMotorRuntime_FormatCount(
+    int64_t value, char text[FEED_MOTOR_COUNT_TEXT_SIZE]) {
+  char reverse[FEED_MOTOR_COUNT_TEXT_SIZE] = {0};
+  uint64_t magnitude = value < 0 ? (uint64_t)(-(value + 1)) + 1U : (uint64_t)value;
+  size_t length = 0U;
+  do {
+    reverse[length++] = (char)('0' + (magnitude % 10U));
+    magnitude /= 10U;
+  } while (magnitude != 0U && length < sizeof(reverse) - 1U);
+  if (value < 0 && length < sizeof(reverse) - 1U) {
+    reverse[length++] = '-';
+  }
+  for (size_t index = 0U; index < length; index++) {
+    text[index] = reverse[length - index - 1U];
+  }
+  text[length] = '\0';
+}
+#endif
+
 /* 周期不能换算为 0 Tick；Ramp 时间不能为 0，活动脉宽必须在停止和最大值之间。 */
 _Static_assert(pdMS_TO_TICKS(FEED_MOTOR_TASK_PERIOD_MS) > 0U, "feed period must be at least one tick");
 _Static_assert(FEED_MOTOR_SNAIL_RAMP_TIME_MS > 0U &&
@@ -139,44 +167,51 @@ void FeedMotor_RuntimeRunCycle(FeedMotor_RuntimeTypeDef *runtime, uint32_t now_m
     age_ms = 0U;
   }
   const bool online = valid && age_ms < C610_M2006_FEEDBACK_TIMEOUT_MS;
-  /* 命令许可与反馈新鲜度共同决定输出。故障立即停轮；在线松键只让摩擦轮缓降。
-   * FeedMotorControl_Update 收到 fire=false 会当周期清零，不能等摩擦轮降速完再停拨弹。 */
+  /* 命令许可与反馈新鲜度共同决定输出。首发先在 FRIC_SPINUP 预旋；进入
+   * FEED/FEED_SETTLE 后继续保持两路活动 PWM，避免 C610 上弹时摩擦轮带载起动。
+   * 按钮释放不能中断进行中的单发；连发释放当周期清零 C610，并让 C615 目标转为停止值。 */
   const bool permitted = command.enabled && online;
-  const bool fire = permitted && command.fire_requested;
+  bool wheels_active = permitted && FeedMotorControl_WheelsActive(&runtime->control);
+  if (runtime->control.phase == FEED_MOTOR_PHASE_CONTINUOUS_FEED &&
+      !command.fire_requested) {
+    wheels_active = false;
+  }
   if (!permitted) {
     FeedMotorRuntime_StopWheels(runtime);
   } else {
-    /* 在线松键与正常启动都走非阻塞 Ramp；每周期只写目标和推进一步，不等待 PWM 周期。 */
-    const uint16_t target = fire ? FEED_MOTOR_SNAIL_ACTIVE_PULSE_US : FEED_MOTOR_SNAIL_STOP_PULSE_US;
+    const uint16_t target = wheels_active ? FEED_MOTOR_SNAIL_ACTIVE_PULSE_US :
+        FEED_MOTOR_SNAIL_STOP_PULSE_US;
     (void)Snail2305_SetTargetPulse(&runtime->left, target);
     (void)Snail2305_SetTargetPulse(&runtime->right, target);
     (void)Snail2305_Process(&runtime->left, dt_ms);
     (void)Snail2305_Process(&runtime->right, dt_ms);
   }
-  /* 比较两份最近 CCR 写值，任一轮还在爬坡就不允许首发；不是读取真实转速。
-   * 反馈坐标符号只换角度/速度，电流符号在控制器输出处单独转换。 */
+  /* PWM 到达活动脉宽只表示 CCR 已写入目标，不是 C615 实际转速反馈。 */
   const bool wheels_ready = runtime->left.pulse_us == FEED_MOTOR_SNAIL_ACTIVE_PULSE_US &&
       runtime->right.pulse_us == FEED_MOTOR_SNAIL_ACTIVE_PULSE_US;
   const int64_t angle_count = feedback.angle_total_raw * FEED_MOTOR_FEEDBACK_SIGN;
-  const int32_t speed_rpm = (int32_t)feedback.speed_rpm * FEED_MOTOR_FEEDBACK_SIGN;
-  const int16_t current_raw = FeedMotorControl_Update(&runtime->control, fire, wheels_ready,
-      angle_count, speed_rpm, now_tick, dt_ms);
-  /* 每周期都更新许可和电流，再提交整组 CAN 槽位；fire=false 的周期仍必须发零。
-   * 驱动提交前再查反馈年龄，堵住计算完成后反馈过期的窗口；HAL 失败不重试忙等。 */
-  (void)C610_M2006_SetOutputEnabled(&runtime->motor, fire);
+  const int16_t current_raw = FeedMotorControl_Update(&runtime->control, permitted,
+      command.fire_requested, wheels_ready, angle_count, now_tick, dt_ms);
+  /* 每周期都更新许可和电流，再提交整组 CAN 槽位；反馈失效或阶段停止仍发零。
+   * 当前电流非零才允许 C610 输出，单发释放后的 FEED 阶段因此仍可继续完成。 */
+  (void)C610_M2006_SetOutputEnabled(&runtime->motor, current_raw != 0);
   (void)C610_M2006_SetCurrent(&runtime->motor, current_raw);
   const bool submitted = C610_M2006_SendAll(&hcan1);
   (void)submitted; /* 关闭日志时仍须提交电流；不能把有硬件副作用的调用放入日志宏。 */
   /* 只打印本周期快照；DMA 忙时保留提交时刻，下周期重试，不缓存旧日志。 */
 #if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && LOG_TASK_ENABLE && LOG_FEED_MOTOR_ENABLE
   if ((TickType_t)(now_tick - runtime->last_log_tick) >= pdMS_TO_TICKS(FEED_MOTOR_LOG_PERIOD_MS)) {
-    if (LOG_TRY_PRINTF(LOG_CATEGORY_FEED_MOTOR, "[供弹] 阶段=%s DBUS许可=%u 反馈有效=%u 在线=%u 年龄(ms)=%lu 角度=%lld 目标=%lld 转速(rpm)=%d 计算电流=%d 输出许可=%u CAN提交=%u 左PWM(us)=%u 右PWM(us)=%u 完成步数=%lu\r\n",
-      FeedMotorControl_PhaseName(runtime->control.phase), command.enabled ? 1U : 0U,
-      valid ? 1U : 0U, online ? 1U : 0U, (unsigned long)age_ms,
-      (long long)feedback.angle_total_raw, (long long)runtime->control.target_count,
-      (int)feedback.speed_rpm, (int)current_raw, fire ? 1U : 0U,
+    char angle_count_text[FEED_MOTOR_COUNT_TEXT_SIZE];
+    FeedMotorRuntime_FormatCount(angle_count, angle_count_text);
+    if (LOG_TRY_PRINTF(LOG_CATEGORY_FEED_MOTOR, "[供弹] 阶段=%s 左键=%u DBUS许可=%u 反馈有效=%u 在线=%u 年龄(ms)=%lu 角度=%s 转速(rpm)=%d 计算电流=%d 输出许可=%u CAN提交=%u 左PWM(us)=%u 右PWM(us)=%u 停滞窗口(count)=%u 停滞确认(ms)=%lu\r\n",
+      FeedMotorControl_PhaseName(runtime->control.phase), command.fire_requested ? 1U : 0U,
+      command.enabled ? 1U : 0U, valid ? 1U : 0U, online ? 1U : 0U,
+      (unsigned long)age_ms, angle_count_text,
+      (int)(feedback.speed_rpm * FEED_MOTOR_FEEDBACK_SIGN), (int)current_raw,
+      current_raw != 0 ? 1U : 0U,
       submitted ? 1U : 0U, (unsigned)runtime->left.pulse_us,
-      (unsigned)runtime->right.pulse_us, (unsigned long)runtime->control.completed_steps)) {
+      (unsigned)runtime->right.pulse_us, (unsigned)FEED_MOTOR_STALL_COUNTS,
+      (unsigned long)runtime->control.stall_elapsed_ms)) {
       runtime->last_log_tick = now_tick;
     }
   }

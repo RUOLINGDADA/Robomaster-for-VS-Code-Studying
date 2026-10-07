@@ -16,7 +16,7 @@
 #include <stdint.h>
 
 #ifndef SNAIL_2305_TEST_ENABLE
-#define SNAIL_2305_TEST_ENABLE 0 /* 独立 C615 测试开关，0/1；当前台架测试开启；开启时 FEED_MOTOR_SNAIL_MODE 必须为 0。 */
+#define SNAIL_2305_TEST_ENABLE 0 /* 独立 C615 PWM 测试开关，0/1；与 C610 角度步长测试互斥。 */
 #endif
 #ifndef SNAIL_2305_TEST_STOP_PULSE_US
 #define SNAIL_2305_TEST_STOP_PULSE_US 1000U /* 测试停止脉宽，us；采用整车例程 FRIC_OFF=1000。 */

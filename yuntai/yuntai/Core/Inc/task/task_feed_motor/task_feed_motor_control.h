@@ -1,74 +1,80 @@
 /**
  * @file task_feed_motor_control.h
- * @brief 供弹预旋、角度步进与最小间隔状态机。
+ * @brief 供弹单发/连发状态机。
  *
- * 仅供弹任务调用。STOP 取消目标；SPINUP 等待双轮目标脉宽和预旋时间。
- * ADVANCE 用角度 P 推进；INTERVAL 保持已完成目标并等待下一步。
- * 输入为同一反馈快照的逻辑连续 count 和 rpm；输出为 C610 电流原始值。
- * 误差与速度须连续满足 20 ms。目标变化后当周期重算误差，防止下一发迟一个周期。
- * 阶段时长由 ms 转 FreeRTOS Tick。本模块不访问硬件，反馈掉线由运行时检查。
+ * 单发不使用固定角度步长。C610 以固定电流驱动，并通过连续位置停滞确认结束上弹。
+ * 先让 C615 预旋到活动脉宽，再驱动 C610 上弹；上弹和停滞确认期间保持摩擦轮活动。
+ * 鼠标左键长按达到阈值只记录连发意图；当前单发完成后才进入 CONTINUOUS_FEED。
+ * 连发不使用停滞判定，释放或命令超时停止。
+ * 本模块只处理数值和状态，不访问 CAN、PWM、DBUS 或日志。
  */
-/* 调用顺序：Init→每周期 Update；许可失效时 Update 内调用 Stop。
- * 上层须先校验反馈新鲜度，使用同份角度/速度快照；本模块返回 raw，不直接触碰 CAN/PWM。 */
+/* 调用顺序：Init→每周期 Update；运行时先按当前 phase 推进 C615，再传入同一份
+ * C610 反馈快照。命令超时由 command_enabled 表示，按钮释放不能中断进行中的单发。 */
 #ifndef TASK_FEED_MOTOR_CONTROL_H
 #define TASK_FEED_MOTOR_CONTROL_H /* 防止重复包含。 */
+
 #include "FreeRTOS.h"
-#include "algorithm/pid/pid.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
 typedef enum {
-  FEED_MOTOR_PHASE_STOP = 0, /* 无发射请求或安全门无效；零电流。 */
-  FEED_MOTOR_PHASE_SPINUP, /* 摩擦轮预旋；零电流。 */
-  FEED_MOTOR_PHASE_ADVANCE, /* 向一个新目标步进；角度 P 输出。 */
-  FEED_MOTOR_PHASE_INTERVAL /* 到位后等待；角度 P 保持该目标。 */
+  FEED_MOTOR_PHASE_STOP = 0, /* 无活动请求；C610 与 C615 停止。 */
+  FEED_MOTOR_PHASE_FEED, /* C615 已预旋，单发持续驱动 C610。 */
+  FEED_MOTOR_PHASE_FEED_SETTLE, /* C615 保持活动，C610 继续确认位置停滞。 */
+  FEED_MOTOR_PHASE_FRIC_SPINUP, /* 首发前 C615 Ramp 到活动脉宽，C610 保持零电流。 */
+  FEED_MOTOR_PHASE_SINGLE_FIRE, /* 单发 C615 已到活动脉宽，保持配置时长。 */
+  FEED_MOTOR_PHASE_WAIT_RELEASE, /* 单发完成，等待松键或长按阈值。 */
+  FEED_MOTOR_PHASE_CONTINUOUS_FEED /* 连发：C610 与 C615 同时持续运行。 */
 } FeedMotor_PhaseTypeDef;
 
 typedef struct {
-  FeedMotor_PhaseTypeDef phase; /* 本周期阶段；由供弹任务独占。 */
-  int64_t target_count; /* 逻辑电机轴连续 count；Stop 对齐当前反馈，StartStep 增加 STEP，不使用单圈回绕值。 */
-  TickType_t phase_start_tick; /* SPINUP/INTERVAL 进入时的 FreeRTOS Tick；仅切换时更新，无符号差算持续时间。 */
-  TickType_t settle_start_tick; /* 首次满足误差/速度窗口的 FreeRTOS Tick；仅 settling=true 时有效，0 Tick 也合法。 */
-  bool settling; /* 连续确认正在进行；Stop/StartStep、到位完成或任一条件失效时清 false，下次重新计时。 */
-  Pid_ControllerTypeDef position; /* count→C610 raw 的 P 控制器；I/D=0，停止与每个新步长清除历史，任务独占。 */
-  uint32_t completed_steps; /* ADVANCE→INTERVAL 时累加；Init 清零，Stop 保留，uint32_t 会回绕；不是实发弹数。 */
+  FeedMotor_PhaseTypeDef phase; /* 当前供弹阶段；仅供弹任务访问。 */
+  TickType_t phase_start_tick; /* SINGLE_FIRE 起始 Tick；无符号差计算持续时间。 */
+  int64_t last_position_count; /* 最近一次检测到明显移动的位置，逻辑电机轴 count。 */
+  uint32_t stall_elapsed_ms; /* FEED_SETTLE 内连续未移动时间，ms；只在单发确认时累加。 */
+  uint32_t press_elapsed_ms; /* 当前左键按下持续时间，ms；达到阈值后保留连发意图。 */
+  bool press_active; /* 上一周期左键状态；用于识别 STOP→FRIC_SPINUP 的按下沿。 */
+  bool continuous_requested; /* 长按已达到阈值；首发完成后切换连发。 */
 } FeedMotor_ControlTypeDef;
 
 /**
- * @brief 初始化控制历史为停止。
- * @param control 任务独占对象。
+ * @brief 初始化供弹状态为停止。
+ * @param control 任务独占状态对象。
  * @retval None；空指针不操作。
- * @note 仅所属任务串行调用；同一实例不能并发修改。
+ * @note 仅供弹任务调用；不访问硬件。
  */
 void FeedMotorControl_Init(FeedMotor_ControlTypeDef *control);
+
 /**
- * @brief 取消未完成步进并将目标对齐当前位置。
- * @param control 任务独占对象。
- * @param angle_count 本周期逻辑连续角度，count。
- * @retval None；清积分和阶段，输出由运行时清零。
- * @note 仅所属任务串行调用；同一实例不能并发修改。
+ * @brief 推进一个非阻塞供弹控制周期。
+ * @param control 任务独占状态对象。
+ * @param command_enabled DBUS 命令和反馈安全门是否有效；false 立即停止。
+ * @param button_pressed 当前合法 DBUS 帧的鼠标左键状态。
+ * @param wheels_ready 两路 C615 当前是否已达到活动脉宽。
+ * @param angle_count 当前 C610 连续逻辑角度，电机轴 count。
+ * @param now_tick 当前 FreeRTOS Tick；用于摩擦轮保持时间。
+ * @param dt_ms 本周期实际毫秒；用于按下和停滞确认计时。
+ * @retval C610 协议目标电流，已按 `FEED_MOTOR_CURRENT_SIGN` 转换；非驱动阶段为 0。
+ * @note 单发释放不能中断 FEED、FEED_SETTLE、FRIC_SPINUP 或 SINGLE_FIRE；命令
+ *       超时仍立即停止。连发只由按键释放或命令超时停止。
  */
-void FeedMotorControl_Stop(FeedMotor_ControlTypeDef *control, int64_t angle_count);
+int16_t FeedMotorControl_Update(FeedMotor_ControlTypeDef *control,
+    bool command_enabled, bool button_pressed, bool wheels_ready,
+    int64_t angle_count, TickType_t now_tick, uint32_t dt_ms);
+
 /**
- * @brief 推进一次状态机并计算本周期电流。
- * @param control 已初始化的任务对象。
- * @param fire 是否请求发射且全部安全门有效。
- * @param wheels_ready 两轮到达活动脉宽；不等同于转速反馈。
- * @param angle_count 本周期逻辑连续角度，count。
- * @param speed_rpm 同份快照的逻辑速度，rpm。
- * @param now_tick 当前 FreeRTOS Tick；毫秒配置在使用点转换。
- * @param dt_ms 本周期 ms；不能传 Tick 数。
- * @retval C610 原始目标电流；未预旋完或输入非法时为 0。
- * @note 仅所属任务串行调用；同一实例不能并发修改。
+ * @brief 判断当前阶段是否需要摩擦轮活动脉宽。
+ * @param control 任务独占状态对象。
+ * @retval true FEED、FEED_SETTLE、FRIC_SPINUP、SINGLE_FIRE 或 CONTINUOUS_FEED；false 其余阶段。
  */
-int16_t FeedMotorControl_Update(FeedMotor_ControlTypeDef *control, bool fire,
-    bool wheels_ready, int64_t angle_count, int32_t speed_rpm,
-    TickType_t now_tick, uint32_t dt_ms);
+bool FeedMotorControl_WheelsActive(const FeedMotor_ControlTypeDef *control);
+
 /**
  * @brief 返回阶段中文名称。
- * @param phase 阶段枚举。
- * @retval 静态只读字符串；未知枚举返回“停止”，不能释放或改写。
- * @note 无可变状态，可并发查询；本工程用于供弹任务日志。
+ * @param phase 供弹阶段枚举。
+ * @retval 静态只读中文名称；未知值返回“停止”。
  */
 const char *FeedMotorControl_PhaseName(FeedMotor_PhaseTypeDef phase);
+
 #endif /* TASK_FEED_MOTOR_CONTROL_H */

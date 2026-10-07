@@ -123,17 +123,18 @@ C610_M2006_SendAll(&hcan1);
 ## 硬件调参测试
 
 永久测试代码位于驱动同级的
-`Core/Inc/bsp/c610_m2006/test_c610_m2006_self_cycle.h` 和
-`Core/Src/bsp/c610_m2006/test_c610_m2006_self_cycle.c`。
+`Core/Inc/bsp/c610_m2006/test_c610_m2006_angle_step.h` 和
+`Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c`。
 
-它只保留上板真正需要的上弹、停止、下弹、停止循环。用户修改头文件中的阶段时间和
-`FEED_MOTOR_TEST_*_CURRENT_RAW` 参数，任务入口直接调用
-`C610_M2006_TestSelfCycle_Run()`。反馈无效时先强制零输出；函数每次只执行一个非阻塞
-控制步。协议字段、ID 过滤和电流钳位由 agent 使用临时脚本或静态检查验证，不建立永久
-合成测试目录。
+在 `task_feed_motor_config.h` 中开启 `FEED_MOTOR_ANGLE_STEP_TEST_ENABLE=1` 后，任务只注册
+C610/M2006 ID1，不启动 C615、不读取 DBUS。测试复用正式 C610 驱动和反馈快照，但不运行
+位置 P、不建立目标角度，并在每个周期强制输出零电流。
 
-正式鼠标供弹使用 `task_feed_motor_config.h` 的角度步长、到位和电流配置。自循环宏仅在
-`FEED_MOTOR_TEST_ENABLE=1` 时生效，不能把往返测试时间当作每发供弹角度。
+首帧新鲜反馈保存为 `reference_count`。随后日志实时输出逻辑连续角度、相对基准增量、
+相邻反馈增量、转速和反馈电流。操作者手动转动拨弹机构，使用 `相对基准` 或重复测量的
+角度增量确认反馈方向和连续角度展开。当前正式供弹不再把该读数写入步长宏；测试完成后将
+测试开关恢复为 `0`。C610 自循环测试已删除。
 
-自循环参数的唯一默认来源为 `Core/Inc/task/task_feed_motor/task_feed_motor_config.h`。
-任务通过 `C610_M2006_TestConfigTypeDef` 传入时序、电流、日志周期；BSP 不反向包含任务头。
+连续 count 在日志前手工转为十进制字符串，再以 `%s` 输出。该处理避开目标端
+`newlib-nano` 的 `%lld` 支持差异，避免“相对基准”显示为 `1d` 等格式残留。
+内部角度计算仍为 `int64_t`；格式化不修改基准，也不缩小计数范围。

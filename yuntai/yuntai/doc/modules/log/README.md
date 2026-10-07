@@ -15,7 +15,7 @@ USART1 使用 `.ioc` 中已有的 115200 baud、8N1、TX DMA。USART3 继续接�
 | `LOG_DBUS_CHART_ENABLE` | 1 | 遥控器 10 通道数值帧 |
 | `LOG_YAW_ENABLE` | 1 | Yaw 初始化、正式诊断、标定和固定目标测试 |
 | `LOG_PITCH_ENABLE` | 1 | Pitch 初始化、正式诊断、标定和固定目标测试 |
-| `LOG_FEED_MOTOR_ENABLE` | 1 | 供弹初始化、正式诊断和 C610 自循环测试 |
+| `LOG_FEED_MOTOR_ENABLE` | 1 | 供弹初始化、正式诊断和 C610 角度步长测试 |
 | `LOG_TASK_ENABLE` | 1 | 三个电机正式日志总门，仍须开启对应电机开关 |
 | `LOG_TEST_ENABLE` | 1 | 硬件测试日志总门，仍须开启对应电机开关 |
 | `LOG_CHART_PREFIX` | `"ch:"` | 图表解析前缀，1~16 字节，不含逗号、换行或 printf 占位符 |

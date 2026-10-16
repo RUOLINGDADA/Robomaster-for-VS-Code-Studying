@@ -1263,7 +1263,7 @@ void FeedMotor_RuntimeRunCycle(FeedMotor_RuntimeTypeDef *runtime, uint32_t now_m
       C610_M2006_SetOutputEnabled(&runtime->motor, current_raw != 0) && current_raw != 0;
   (void)output_enabled; /* 日志记录本周期许可设置成功，不能仅用计算电流非零推定许可成功。 */
   (void)C610_M2006_SetCurrent(&runtime->motor, current_raw);
-  const bool submitted = C610_M2006_SendAll(&hcan1);
+  const bool submitted = C610_M2006_SendAll(&hcan2);
   (void)submitted; /* 关闭日志时仍须提交电流；不能把有硬件副作用的调用放入日志宏。 */
   /* 只打印本周期快照；DMA 忙时保留提交时刻，下周期重试，不缓存旧日志。 */
 #if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && LOG_TASK_ENABLE && LOG_FEED_MOTOR_ENABLE

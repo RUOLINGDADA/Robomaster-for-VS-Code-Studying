@@ -13,7 +13,7 @@
 
 它不负责 CubeMX 的 CAN 外设初始化、GPIO 复用、过滤器配置、FreeRTOS 任务创建、PID 或云台业务控制。
 
-当前 `.ioc` 已启用 CAN1，CubeMX 生成的 HAL 配置定义 `HAL_CAN_MODULE_ENABLED`，并将
+当前 `.ioc` 已启用 CAN1/CAN2，供弹使用 CAN2，CAN1 预留底盘。CubeMX 生成的 HAL 配置定义 `HAL_CAN_MODULE_ENABLED`，并将
 `stm32f4xx_hal_can.c` 加入 CMake。驱动仍保留未启用 CAN 时的失败桩，便于独立阅读和
 移植；失败桩不会伪装成设备可用。
 
@@ -50,7 +50,7 @@ GM6020 的电流给定范围混用。
 
 ## 供弹控制约束
 
-正式 `task_feed_motor` 使用 CAN1 ID 1（反馈 `0x201`，控制 `0x200`）。反馈在每个 CAN
+正式 `task_feed_motor` 使用 CAN2 ID 1（反馈 `0x201`，控制 `0x200`）。反馈在每个 CAN
 帧到达时展开为 64 位连续角度，回绕阈值为半圈 4096 count；任务通过快照读取角度、速度、
 反馈时间和保留字节。命令或反馈超过 100 ms 时，驱动清除输出许可和目标电流，聚合帧对应
 槽位发送零。恢复后由供弹控制层以当前位置重建下一发目标，避免追踪掉线期间的旧角度。
@@ -70,7 +70,7 @@ GM6020 的电流给定范围混用。
 ```c
 C610_M2006_HandleTypeDef motor;
 C610_M2006_ConfigTypeDef config = {
-    .hcan = &hcan1,
+    .hcan = &hcan2,
     .motor_id = 1U,
     .feedback_timeout_ms = 100U,
 };
@@ -92,7 +92,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
 C610_M2006_SetOutputEnabled(&motor, true);
 C610_M2006_SetCurrent(&motor, target_current_raw);
 C610_M2006_Process(&motor, HAL_GetTick());
-C610_M2006_SendAll(&hcan1);
+C610_M2006_SendAll(&hcan2);
 ```
 
 发送周期应由上层控制需求决定。对于电流控制，通常需要稳定的毫秒级周期；驱动本身不创建任务，也不保证调用者的周期。
@@ -115,7 +115,7 @@ C610_M2006_SendAll(&hcan1);
 
 ## 已知限制和待确认项
 
-- 当前 CAN1 已启用并在 USER CODE 中启动。总线终端电阻、供电、ID 和方向仍待台架确认。
+- 当前 CAN2 在 `main.c` USER CODE 中使用 bank 14（分界值 14）、启动并开启 FIFO0 通知；CAN1 只初始化并预留底盘。总线终端电阻、供电、ID 和方向仍待台架确认。
 - C610 的实际额定电流、保护阈值、`DATA[7]` 错误码和电机方向约定需根据使用的 C610 固件、接线和测试结果确认。这里的 `[-10000, 10000]` 是官方协议输入范围，不等同于允许长期输出的机械安全电流。
 - 当前驱动不含 PID、堵转判定、温度保护回调、日志和 FreeRTOS 任务，这些属于上层功能模块。
 - HAL CAN 接收过滤器应覆盖 `0x201` 至 `0x208`，具体 16/32 位掩码配置需与使用 CAN 实例和其它设备共享过滤器的方案一起确定。

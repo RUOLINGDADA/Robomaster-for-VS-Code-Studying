@@ -18,7 +18,7 @@
 #define FEED_MOTOR_TASK_PERIOD_MS 2U /* 控制周期，ms；修改后检查调度负载。 */
 #define FEED_MOTOR_INIT_RETRY_MS 100U /* 初始化重试间隔，ms；避免故障忙等。 */
 #define FEED_MOTOR_COMMAND_TIMEOUT_MS 100U /* DBUS 命令期限，HAL ms；过期立即停机。 */
-#define FEED_MOTOR_ID 1U /* CAN1 C610 ID1；反馈标准帧 0x201，控制标准帧 0x200。 */
+#define FEED_MOTOR_ID 1U /* CAN2 C610 ID1；反馈标准帧 0x201，控制标准帧 0x200。 */
 #ifndef FEED_MOTOR_STEP_COUNTS
 #define FEED_MOTOR_STEP_COUNTS (4000LL) /* 每次供弹的电机转子连续逻辑 count，非零；用户指定试用值，符号决定目标和逻辑电流方向。 */
 #endif

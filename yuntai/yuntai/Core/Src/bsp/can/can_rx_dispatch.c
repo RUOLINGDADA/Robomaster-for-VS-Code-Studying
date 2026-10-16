@@ -14,8 +14,8 @@
  * @brief  处理 CAN FIFO0 pending 中断。
  * @param  hcan 产生中断的 CAN 外设。
  * @retval None。HAL 取帧失败时本次退出。
- * @note   当前 CAN1 使用 FIFO0。统一入口先取出一帧，再把同一份数据交给
- * 两个驱动，避免驱动之间争抢 FIFO 或丢失不属于自己的帧。
+ * @note   当前云台 CAN2 使用 FIFO0。统一入口先取出一帧，再把同一份数据交给
+ * 两个驱动；驱动按 CAN 句柄和标准 ID 匹配，避免争抢 FIFO 或混入底盘 CAN1 的同 ID 帧。
  */
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
   CAN_RxHeaderTypeDef rx_header = {0};

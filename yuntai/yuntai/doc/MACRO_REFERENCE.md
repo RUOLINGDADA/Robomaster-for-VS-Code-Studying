@@ -3463,7 +3463,7 @@ Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_command.c](../Core/S
 ### FEED_MOTOR_ID（第 21 行定义）
 
 ```c
-#define FEED_MOTOR_ID 1U /* CAN1 C610 ID1；反馈标准帧 0x201，控制标准帧 0x200。 */
+#define FEED_MOTOR_ID 1U /* CAN2 C610 ID1；反馈标准帧 0x201，控制标准帧 0x200。 */
 ```
 
 CAN路由/槽位；GM6020反馈0x204+ID，C610反馈0x200+ID。
@@ -3499,7 +3499,7 @@ Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/In
 ### FEED_MOTOR_STEP_PAUSE_MS（第 27 行定义）
 
 ```c
-#define FEED_MOTOR_STEP_PAUSE_MS 200U /* 长按每步完成后的零电流停顿，ms，范围 (0,INT32_MAX]；增大会降低重复频率。 */
+#define FEED_MOTOR_STEP_PAUSE_MS 100U /* 长按每步完成后的零电流停顿，ms，范围 (0,INT32_MAX]；增大会降低重复频率。 */
 ```
 
 每步到位周期输出零并记录完成Tick；直到Tick差达到pdMS_TO_TICKS(本停顿)且长按达阈值才建立下一目标。

@@ -1,5 +1,12 @@
 # 变更记录
 
+## 2026-10-16（云台与供弹迁移到 CAN2，CAN1 预留底盘）
+
+- 保留用户由 CubeMX 生成的双 CAN 配置及已迁移的 `hcan2` 绑定，确认 Yaw `0x205`、Pitch `0x206`、供弹 `0x201` 的正式与硬件测试路径均使用 CAN2。修复 `main.c` USER CODE 中残留的 `FilterBank=0`，改为 CAN2 的 bank 14，`SlaveStartFilterBank=14` 保持不变；bank 0~13 留给 CAN1。此修复避免 CAN2 已启动却无法接收反馈。
+- 核对 CAN2 PB5/PB6、1 Mbit/s、RX0 优先级 5、HAL IRQ 入口和双 CAN 的 CAN1 时钟依赖。CAN1 PD0/PD1、初始化与 IRQ 保留，底盘业务过滤器、启动和分发待接入；未将云台句柄留在 CAN1。
+- 清理独立 task/app/BSP 的 CAN1 残留注释，同步模块 README、工程入口、架构、已知限制、CubeMX 检查和防复发记录；重建技术附录。`.ioc` 持久化用户已有的引脚/时序/IRQ；本轮运行时修复持久化于 `main.c` USER CODE，业务绑定位于独立模块，本轮未修改生成区或 `.ioc`。
+- `cmake --preset Debug`、`cmake --build --preset Debug` 通过（RAM 48720 B，Flash 66188 B）。CAN2 实际收发、接线、终端电阻和电机零电流安全行为仍待上板验证，构建通过不代表实机验证。
+
 ## 2026-10-11（长按改为单发步长与 200 ms 停顿重复）
 
 - 按用户反馈修复长按每步完成后同周期续发导致连续转动。新增 `FEED_MOTOR_STEP_PAUSE_MS=200 ms`（用户确认），每次到位先返回零，`WAIT_NEXT_STEP` 从到位 Tick 计满停顿后且左键仍长按才开始下一步。停顿中松键取消后续发射；不使用阻塞延时。

@@ -41,6 +41,8 @@ doc/
 
 ## 当前已实现模块
 
+云台 Yaw/Pitch 与供弹 M2006 统一使用 CAN2（PB5 RX、PB6 TX，1 Mbit/s）；CAN1（PD0 RX、PD1 TX）预留底盘。过滤器分区和重新生成检查见 `TECHNICAL_ARCHITECTURE.md` §13.1 与 `CUBEMX_MANUAL_STEPS.md`。
+
 当前已实现模块：
 
 - `Core/Inc/app/log/` 与 `Core/Src/app/log/`：独立 Yaw/Pitch/供弹开关、统一日志宏和唯一 USART1 DMA 后端，支持 DBUS 全量/10 通道图表输出；配置和上位机操作见 `doc/modules/log/README.md`。

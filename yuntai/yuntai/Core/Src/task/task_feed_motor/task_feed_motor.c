@@ -2,13 +2,13 @@
  * @file task_feed_motor.c
  * @brief 供弹 FreeRTOS 入口与周期调度。
  *
- * CAN1 ID1 M2006 与 PE9/PE11 双 C615。
+ * CAN2 ID1 M2006 与 PE9/PE11 双 C615。
  * CubeMX/.ioc 创建该任务：Normal2，栈 1024 words。配置周期为 2 ms。
  * 入口只初始化并周期调度，不创建额外 RTOS 对象；任务永不返回。
  * FreeRTOS Tick 用于调度；HAL ms 用于命令和反馈年龄，不能混用。
  * 正式发射与显式硬件测试互斥。部分初始化失败保留停止输出，并限频重试。
  * Normal2 与两个云台任务同级；100 ms 命令/反馈安全门由本任务自行检查。
- * main 先完成 CAN1/TIM1；本任务注册 M2006、写停止值并启动双 PWM，不重复创建任务。
+ * main 先完成 CAN2/TIM1；本任务注册 M2006、写停止值并启动双 PWM，不重复创建任务。
  * 初始化重试保留已注册句柄；HAL 失败不证明硬件已停，软件只能提交停止命令。
  */
 
@@ -47,7 +47,7 @@ void task_feed_motor_entry(void *argument) {
       .log_period_ms = FEED_MOTOR_ANGLE_STEP_TEST_LOG_PERIOD_MS,
   };
   const C610_M2006_ConfigTypeDef motor_config = {
-      .hcan = &hcan1,
+      .hcan = &hcan2,
       .motor_id = FEED_MOTOR_ID,
       .feedback_timeout_ms = C610_M2006_FEEDBACK_TIMEOUT_MS,
   };
@@ -62,7 +62,7 @@ void task_feed_motor_entry(void *argument) {
   }
   (void)C610_M2006_SetOutputEnabled(&motor, false);
   (void)C610_M2006_SetCurrent(&motor, 0);
-  (void)C610_M2006_SendAll(&hcan1);
+  (void)C610_M2006_SendAll(&hcan2);
   TickType_t last_wake_tick = xTaskGetTickCount();
   for (;;) {
     const TickType_t now_tick = xTaskGetTickCount();

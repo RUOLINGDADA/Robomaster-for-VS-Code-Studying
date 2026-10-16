@@ -46,12 +46,12 @@ CubeMX/HAL 外设
 `main()` 执行以下顺序：
 
 1. `HAL_Init()` 和时钟配置。
-2. 初始化 GPIO、DMA、CAN1、USART1、USART3、TIM1。
-3. 配置 CAN1 FIFO0 过滤器、启动 CAN、打开 `CAN_IT_RX_FIFO0_MSG_PENDING`。
+2. 初始化 GPIO、DMA、CAN1、USART1、USART3、TIM1、CAN2。
+3. 配置 CAN2 bank 14 FIFO0 过滤器、启动 CAN2、打开 `CAN_IT_RX_FIFO0_MSG_PENDING`；CAN1 预留底盘，当前只初始化。
 4. `osKernelInitialize()`，由 `MX_FREERTOS_Init()` 创建 DBUS、Yaw、Pitch、供弹任务。
 5. `osKernelStart()` 后，业务在任务和 CAN 中断中运行。
 
-正式供弹和 C615 独立 PWM 测试启动时分别初始化所需的驱动；C610 角度步长测试只注册 CAN1 ID1 的 C610/M2006，不启动 C615。任一所需驱动初始化失败，任务保持停止输出并按 `FEED_MOTOR_INIT_RETRY_MS` 重试；不能把“句柄注册成功”当成“电机已经在线”。
+正式供弹和 C615 独立 PWM 测试启动时分别初始化所需的驱动；C610 角度步长测试只注册 CAN2 ID1 的 C610/M2006，不启动 C615。任一所需驱动初始化失败，任务保持停止输出并按 `FEED_MOTOR_INIT_RETRY_MS` 重试；不能把“句柄注册成功”当成“电机已经在线”。
 
 ### 2.2 周期任务表
 
@@ -364,7 +364,7 @@ Yaw 默认关闭重力补偿；Pitch 当前默认偏置 4500 raw、幅值 1500 r
 - C615 CH1：PE9/TIM1_CH1。
 - C615 CH2：PE11/TIM1_CH2。
 - TIM1：1 MHz 计数、20000 us 周期，即 50 Hz。
-- M2006：CAN1、C610 ID1、反馈 `0x201`、控制 `0x200`。
+- M2006：CAN2、C610 ID1、反馈 `0x201`、控制 `0x200`。
 
 C615 是开环 PWM：停止值、活动值和 Ramp 由供弹配置提供；代码只知道最近写入的 CCR，不知道真实转速。M2006 使用连续角度固定步长和固定电流；目标方向比较之外还检查本步实际位移，防止反馈方向配置错误导致无限输出。
 
@@ -645,13 +645,15 @@ APB2 PCLK      = 168 MHz / 2 = 84 MHz
 
 STM32F4 的定时器在 APB 分频不为 1 时获得 `2×PCLK`，因此 TIM1 的输入时钟为 168 MHz。TIM1 的 `PSC=167` 先得到 1 MHz 计数，`ARR=19999` 产生 20,000 个计数的周期，即 50 Hz；CCR 的整数值直接表示微秒脉宽。C615 当前正式活动 1400 us 对应 1.400 ms 高电平时间。
 
-CAN1 的位时序为 `Prescaler=3, BS1=10TQ, BS2=3TQ, SJW=1TQ`，每位包含 `1+10+3=14TQ`，所以：
+CAN1/CAN2 的位时序均为 `Prescaler=3, BS1=10TQ, BS2=3TQ, SJW=1TQ`，每位包含 `1+10+3=14TQ`，所以：
 
 ```text
 42 MHz / (3 × 14) = 1 Mbit/s
 ```
 
-CAN GPIO 为 PD0 RX、PD1 TX，CAN1_RX0 中断优先级 5。过滤器当前为 32 位掩码全零并送 FIFO0，所有标准帧先进入统一分发，再由 GM6020/C610 按 ID 过滤；因此“总线能收到帧”不等于“某个电机句柄已收到合法反馈”。
+CAN2 使用 PB5 RX、PB6 TX，CAN2_RX0 中断优先级 5，承载 Yaw `0x205`、Pitch `0x206` 与供弹 `0x201`。CAN1 使用 PD0 RX、PD1 TX，CAN1_RX0 优先级 5，预留底盘；当前只有外设初始化，尚未启动业务收发。CubeMX 的双 CAN MSP 已保留 CAN1 时钟引用计数，CAN2 工作时必须保持 CAN1 时钟。
+
+依据 STM32F407 双 bxCAN 共享过滤器和 HAL `HAL_CAN_ConfigFilter()`：`SlaveStartFilterBank=14` 将 bank 0~13 分给 CAN1、14~27 分给 CAN2；云台必须使用 `FilterBank=14`，仅将句柄改为 `hcan2` 而保留 bank 0 会导致 CAN2 无反馈。当前 CAN2 bank 14 为 32 位全零掩码并送 FIFO0，硬件接收所有帧，再由 GM6020/C610 按 CAN 句柄、标准数据帧、长度和 ID 校验；同 ID 的 CAN1 帧不会更新 CAN2 电机。接收回调只读一次 FIFO，任务通过快照读取反馈并使用 HAL 毫秒判断超时；过滤器、启动或通知失败进入 `Error_Handler()`。后续配置底盘过滤器须使用相同分界值和 bank 0~13。
 
 HAL 的 1 ms 时间基准来自 TIM7 更新中断并调用 `HAL_IncTick()`；FreeRTOS Tick 另由内核维护。`HAL_GetTick()` 只用于反馈/命令年龄和时间戳，`xTaskGetTickCount()` 只用于调度和供弹阶段。即便两者当前都是 1 kHz，也不能把一个计数器的值直接写进另一个 API。
 
@@ -748,7 +750,7 @@ flowchart LR
   T --> Y[YawCommand]
   T --> Q[PitchCommand]
   T --> F[FeedCommand]
-  C[CAN1 FIFO0 ISR] --> G[GM6020/C610 feedback]
+  C[CAN2 FIFO0 ISR] --> G[GM6020/C610 feedback]
   Y --> YA[Yaw GimbalAxis]
   Q --> PA[Pitch GimbalAxis]
   G --> YA
@@ -759,7 +761,7 @@ flowchart LR
   G --> FS
   FS --> PW[C615 TIM1 PWM]
   FS --> CF[C610 current aggregate 0x200]
-  GC --> B[CAN1 TX mailbox]
+  GC --> B[CAN2 TX mailbox]
   CF --> B
 ```
 

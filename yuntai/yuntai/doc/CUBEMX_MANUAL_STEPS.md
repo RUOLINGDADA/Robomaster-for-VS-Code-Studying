@@ -5,7 +5,7 @@
 1. 在 Pinout 中确认 PE9 为 `TIM1_CH1`，PE11 为 `TIM1_CH2`。确认两根线分别接左、右 C615 信号输入。
 2. 使用 DJI Assistant 2 或外部安全 PWM 工具校准 C615 的 PWM 行程并设置电机方向。协议允许 400~2200 us；当前正式配置停止值为 1000 us、活动值为 1400 us、运行上限为 1550 us。活动值与最大校准行程是两个参数，软件已删除 C615 校准模式。校准后同步修改 `task_feed_motor_config.h` 的脉宽宏。
 3. 确认 `MX_TIM1_Init()` 在 `main()` 的 FreeRTOS 初始化之前执行。TIM1 不启用中断；PWM 由 `task_feed_motor` 在任务上下文启动和更新。
-4. 保留 `main.c` 的 CAN 过滤器、`HAL_CAN_Start()` 和 FIFO0 pending 通知 USER CODE。CubeMX 只负责 CAN 外设初始化，不能替代这些业务调用。
+4. 确认 CAN2 为 PB5 RX/PB6 TX、1 Mbit/s，`MX_CAN2_Init()` 在 USER CODE 启动前执行，`CAN2_RX0_IRQHandler()` 调用 `HAL_CAN_IRQHandler(&hcan2)`。保留 `main.c` USER CODE 中的 CAN2 bank 14 过滤器（`SlaveStartFilterBank=14`）、`HAL_CAN_Start(&hcan2)` 和 FIFO0 pending 通知。CAN1 的 PD0/PD1、初始化与 IRQ 预留底盘，当前不启动。双 CAN MSP 必须保留 CAN1 时钟依赖；底盘接入时使用 bank 0~13 和相同分界值。CubeMX 只负责外设初始化，不能替代业务调用。
 5. 保留 `stm32f4xx_it.c` 的 USART3 专用 DBUS IDLE、UART 错误和 DMA 双缓冲处理。不能恢复普通 `HAL_UART_IRQHandler(&huart3)`，否则会与 DBUS 双缓冲状态机争用。
 6. 保留供弹任务中的 `HAL_TIM_PWM_Start()`、停止脉宽写入和 `C610_M2006_SendAll()` 调用。CubeMX 只能生成 TIM1 初始化，不能保存业务启停和安全归零逻辑。
 7. 生成完成后检查 `Core/Inc/tim.h`、`Core/Src/tim.c`、TIM1 MSP 初始化和 `cmake/stm32cubemx/CMakeLists.txt` 的 `tim.c` 源文件项。

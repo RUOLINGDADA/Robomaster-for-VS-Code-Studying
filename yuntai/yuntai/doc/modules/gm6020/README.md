@@ -14,6 +14,8 @@ Core/Src/bsp/can/can_rx_dispatch.c
 
 云台轴不再执行动态堵转判定或锁存；边界命令过滤由 `app/gimbal` 完成。
 
+当前 Yaw/Pitch 均注册到 `hcan2`（PB5 RX、PB6 TX，1 Mbit/s），与供弹 M2006 共用 CAN2。`main.c` USER CODE 使用 bank 14、共享过滤器分界值 14，启动 CAN2 并开启 FIFO0 通知；CAN1 预留底盘。驱动收发按 CAN 句柄隔离，通用接口不固定到某个总线实例。实机接线和反馈待验证。
+
 ## 反馈与发送协议
 
 | 字段 | 值 |

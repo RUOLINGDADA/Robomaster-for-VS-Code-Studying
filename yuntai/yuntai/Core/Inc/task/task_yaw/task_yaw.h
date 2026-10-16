@@ -2,7 +2,7 @@
  * @file task_yaw.h
  * @brief Yaw FreeRTOS 入口与周期调度。
  *
- * CAN1 反馈 0x205 的独立 GM6020。
+ * CAN2 反馈 0x205 的独立 GM6020。
  * CubeMX/.ioc 创建该任务：Normal2，栈 2048 words。配置周期为 2 ms。
  * 入口只初始化并周期调度，不创建额外 RTOS 对象；任务永不返回。
  * FreeRTOS Tick 用于调度；HAL ms 用于命令和反馈年龄，不能混用。

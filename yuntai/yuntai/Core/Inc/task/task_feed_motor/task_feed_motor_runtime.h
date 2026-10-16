@@ -2,7 +2,7 @@
  * @file task_feed_motor_runtime.h
  * @brief 双 C615 PWM 与唯一 M2006 自动供弹运行时。
  *
- * CAN1 ID1 M2006 与 PE9/PE11 双 C615。
+ * CAN2 ID1 M2006 与 PE9/PE11 双 C615。
  * 仅供弹任务调用。两个 PWM 句柄由该任务独占，CAN ISR 只更新反馈。
  * 部分初始化失败时保留已注册 CAN 句柄，重试未启动 PWM 并保持停止值。
  * 每周期在短临界区复制首帧标志和反馈；控制和日志共用这一份快照。

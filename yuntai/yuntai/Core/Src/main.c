@@ -97,10 +97,13 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
   MX_TIM1_Init();
+  MX_CAN2_Init();
   /* USER CODE BEGIN 2 */
-  /* CAN 过滤器配置（当前掩码全零，FIFO0 接收所有标准帧，具体 ID 由驱动分发层再筛选）。 */
+  /* STM32F407 双 CAN 共用过滤器：bank 0~13 留给底盘 CAN1，bank 14~27 属于云台 CAN2。
+   * 掩码全零会接收所有帧；驱动再校验标准数据帧和 ID。只换 hcan 而保留 bank 0 会让 CAN2 收不到反馈。
+   * CAN1 目前只保留 CubeMX 初始化，底盘接入时再配置其过滤器、启动和接收分发。 */
   CAN_FilterTypeDef filter_cfg = {0};
-  filter_cfg.FilterBank = 0;
+  filter_cfg.FilterBank = 14;
   filter_cfg.FilterMode = CAN_FILTERMODE_IDMASK;
   filter_cfg.FilterScale = CAN_FILTERSCALE_32BIT;
   filter_cfg.FilterIdHigh = 0x0000;
@@ -110,9 +113,9 @@ int main(void)
   filter_cfg.FilterFIFOAssignment = CAN_RX_FIFO0;
   filter_cfg.FilterActivation = ENABLE;
   filter_cfg.SlaveStartFilterBank = 14;
-  if (HAL_CAN_ConfigFilter(&hcan1, &filter_cfg) != HAL_OK ||
-      HAL_CAN_Start(&hcan1) != HAL_OK ||
-      HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
+  if (HAL_CAN_ConfigFilter(&hcan2, &filter_cfg) != HAL_OK ||
+      HAL_CAN_Start(&hcan2) != HAL_OK ||
+      HAL_CAN_ActivateNotification(&hcan2, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
     /* CAN 初始化失败时保持 Error_Handler 的安全停机，不让任务在未过滤/未启动总线上运行。 */
     Error_Handler();
   }

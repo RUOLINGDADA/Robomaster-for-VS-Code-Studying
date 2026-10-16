@@ -2,7 +2,7 @@
  * @file task_pitch_runtime.c
  * @brief Pitch配置、命令与共用轴运行时适配。
  *
- * CAN1 反馈 0x206 的独立 GM6020。
+ * CAN2 反馈 0x206 的独立 GM6020。
  * 仅所属轴任务调用；Yaw/Pitch 不共享句柄、控制历史或测试状态。
  * HAL ms 用于命令、反馈和日志。dt_ms 用于控制周期，不传 FreeRTOS Tick。
  * 命令失效按零速度保持。未标定、参数无效或 CAN 掉线时清零电流。
@@ -32,7 +32,7 @@ bool PitchTask_RuntimeInit(PitchTask_RuntimeTypeDef *runtime) {
       /* 硬件与逻辑方向分开配置：电流符号控制施力，速度符号只转换反馈。
        * 两者不能当作一个开关一起改，否则闭环方向错误可能被掩盖。 */
       .motor = {
-          .hcan = &hcan1,
+          .hcan = &hcan2,
           .feedback_id = GM6020_FEEDBACK_ID_PITCH,
           .current_sign = PITCH_MOTOR_CURRENT_SIGN,
           .speed_sign = PITCH_FEEDBACK_SPEED_SIGN,

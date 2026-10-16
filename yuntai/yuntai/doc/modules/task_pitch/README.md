@@ -1,5 +1,7 @@
 # Pitch 发射云台任务
 
+本轴使用 CAN2 的 GM6020 反馈 `0x206`、电流控制帧 `0x1FE` 第二个槽位；CAN1 预留底盘。正式和硬件测试共用同一个 CAN2 句柄。
+
 Pitch 是纵向轴，默认 GM6020 反馈 ID `0x206`。使用独立 `PitchTask_RuntimeTypeDef` 与
 `task_pitch_config.h`，共用 `app/gimbal` 控制和驱动同级硬件测试，不复制 Yaw 算法。
 任务入口仍是 CubeMX 已创建的 `task_pitch_entry`；每 2 ms 只调用一个模式。

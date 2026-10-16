@@ -2,7 +2,7 @@
  * @file task_yaw_runtime.h
  * @brief Yaw配置、命令与共用轴运行时适配。
  *
- * CAN1 反馈 0x205 的独立 GM6020。
+ * CAN2 反馈 0x205 的独立 GM6020。
  * 仅所属轴任务调用；Yaw/Pitch 不共享句柄、控制历史或测试状态。
  * HAL ms 用于命令、反馈和日志。dt_ms 用于控制周期，不传 FreeRTOS Tick。
  * 命令失效按零速度保持。未标定、参数无效或 CAN 掉线时清零电流。

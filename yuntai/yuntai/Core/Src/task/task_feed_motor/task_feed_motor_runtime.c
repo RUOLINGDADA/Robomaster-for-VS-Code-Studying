@@ -2,7 +2,7 @@
  * @file task_feed_motor_runtime.c
  * @brief 双 C615 PWM 与唯一 M2006 自动供弹运行时。
  *
- * CAN1 ID1 M2006 与 PE9/PE11 双 C615。
+ * CAN2 ID1 M2006 与 PE9/PE11 双 C615。
  * 仅供弹任务调用。两个 PWM 句柄由该任务独占，CAN ISR 只更新反馈。
  * 部分初始化失败时保留已注册 CAN 句柄，重试未启动 PWM 并保持停止值。
  * 每周期在短临界区复制首帧标志和反馈；控制和日志共用这一份快照。
@@ -86,10 +86,10 @@ bool FeedMotor_RuntimeInit(FeedMotor_RuntimeTypeDef *runtime) {
     FeedMotorControl_Init(&runtime->control);
     runtime->configured = true;
   }
-  /* M2006 使用 CAN1 电调 ID1，反馈 0x201、控制 0x200 的第一个槽位。
+  /* M2006 使用 CAN2 电调 ID1，反馈 0x201、控制 0x200 的第一个槽位。
    * 不在这里设置 CAN 过滤器或启动总线，这些操作由 main 的 USER CODE 完成。 */
   const C610_M2006_ConfigTypeDef can_config = {
-    .hcan = &hcan1, .motor_id = FEED_MOTOR_ID,
+    .hcan = &hcan2, .motor_id = FEED_MOTOR_ID,
     .feedback_timeout_ms = C610_M2006_FEEDBACK_TIMEOUT_MS,
   };
   /* TIM1 的 1 MHz/50 Hz 时基来自 .ioc；驱动只检查而不覆盖配置。
@@ -114,7 +114,7 @@ bool FeedMotor_RuntimeInit(FeedMotor_RuntimeTypeDef *runtime) {
   (void)C610_M2006_SetOutputEnabled(&runtime->motor, false);
   (void)C610_M2006_SetCurrent(&runtime->motor, 0);
   if (motor_ok) {
-    (void)C610_M2006_SendAll(&hcan1);
+    (void)C610_M2006_SendAll(&hcan2);
   }
   FeedMotorRuntime_StopWheels(runtime);
   /* 只有全部驱动成功才返回 true；失败仍保留 configured 及成功句柄，入口限频重试。 */
@@ -189,7 +189,7 @@ void FeedMotor_RuntimeRunCycle(FeedMotor_RuntimeTypeDef *runtime, uint32_t now_m
       C610_M2006_SetOutputEnabled(&runtime->motor, current_raw != 0) && current_raw != 0;
   (void)output_enabled; /* 日志记录本周期许可设置成功，不能仅用计算电流非零推定许可成功。 */
   (void)C610_M2006_SetCurrent(&runtime->motor, current_raw);
-  const bool submitted = C610_M2006_SendAll(&hcan1);
+  const bool submitted = C610_M2006_SendAll(&hcan2);
   (void)submitted; /* 关闭日志时仍须提交电流；不能把有硬件副作用的调用放入日志宏。 */
   /* 只打印本周期快照；DMA 忙时保留提交时刻，下周期重试，不缓存旧日志。 */
 #if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && LOG_TASK_ENABLE && LOG_FEED_MOTOR_ENABLE

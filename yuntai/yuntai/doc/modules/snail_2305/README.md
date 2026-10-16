@@ -32,7 +32,7 @@ C615 没有本项目使用的 CAN 反馈。`initialized=true` 只说明 HAL 接�
 
 ## 任务组合
 
-现有 `task_feed_motor` 每 2 ms 同时管理两个 C615 和 CAN1 ID1 的 M2006。DBUS
+现有 `task_feed_motor` 每 2 ms 同时管理两个 C615 和 CAN2 ID1 的 M2006。DBUS
 在线且 M2006 反馈新鲜时，Shift 按住让两路 C615 Ramp 到当前活动值 1400 us；
 Shift 松开当周期调用 `Snail2305_Stop()` 写 1000 us 并重置 Ramp。
 鼠标左键独立控制 M2006 的固定步长，不自动启动 C615；供弹没有预旋等待。

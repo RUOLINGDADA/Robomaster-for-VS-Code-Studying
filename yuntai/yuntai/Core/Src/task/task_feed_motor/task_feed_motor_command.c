@@ -38,7 +38,7 @@ bool FeedMotorCommand_Submit(const FeedMotor_CommandTypeDef *command) {
 /**
  * @brief 读取命令并执行 100 ms 超时归零。
  * @param now_ms HAL_GetTick 时间；不能传 FreeRTOS Tick。
- * @param command 输出快照；无命令或过期时两个布尔值为 false。
+ * @param command 输出快照；无命令或过期时许可、左键与 Shift 均为 false。
  * @retval true 有过命令；false 空指针或尚未发布。
  * @note 仅任务调用；短临界区只复制，不等待新帧。
  */
@@ -60,9 +60,10 @@ bool FeedMotorCommand_GetSnapshot(uint32_t now_ms, FeedMotor_CommandTypeDef *com
   if (!received || !command->enabled ||
       (age_ms <= INT32_MAX && age_ms >= FEED_MOTOR_COMMAND_TIMEOUT_MS)) {
     /* 只清除输出副本，保留原邮箱时间；本次查询不能给旧按钮续期。
-     * 两个布尔值一起失效，运行时据此立即停止拨弹和故障停轮。 */
+     * 许可、左键和 Shift 一起失效，避免其它消费者误读过期摩擦轮请求。 */
     command->enabled = false;
     command->fire_requested = false;
+    command->fric_requested = false;
   }
   return received;
 }

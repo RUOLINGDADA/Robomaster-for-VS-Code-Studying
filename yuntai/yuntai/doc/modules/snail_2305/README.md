@@ -33,13 +33,15 @@ C615 没有本项目使用的 CAN 反馈。`initialized=true` 只说明 HAL 接�
 ## 任务组合
 
 现有 `task_feed_motor` 每 2 ms 同时管理两个 C615 和 CAN1 ID1 的 M2006。DBUS
-在线且左键按下时，单发先让两路 C615 Ramp 到活动值，再由 M2006 固定电流上弹；上弹及
-连续位置停滞确认期间两路 C615 始终活动。停滞确认后 C610 清零，C615 保持单发配置时间。
-左键长按阈值达到且第一发完成后，M2006 与两路 C615
-同时进入连发。
+在线且 M2006 反馈新鲜时，Shift 按住让两路 C615 Ramp 到当前活动值 1400 us；
+Shift 松开当周期调用 `Snail2305_Stop()` 写 1000 us 并重置 Ramp。
+鼠标左键独立控制 M2006 的固定步长，不自动启动 C615；供弹没有预旋等待。
+M2006 长按每步到位后停顿 200 ms，停顿不改变仍由 Shift 请求的 C615 油门。
+C615 没有转速反馈，CCR 到目标不代表实际转速。
 
-DBUS 离线、M2006 反馈超时、初始化失败或左键释放时，M2006 发送零电流；C615
-故障时直接写 1000 us，正常释放时按斜坡回到 1000 us。两个轮使用同一脉宽，
+DBUS 离线、M2006 反馈超时或初始化失败时，M2006 发送零电流，C615 直接写停止值。
+左键释放仍由 M2006 完成当前步长后发送零；Shift 松开只停止 C615。CCR 预装载最迟下一
+20 ms PWM 周期生效，实际轮子停止还受惯性影响。两个轮使用同一脉宽，
 相反旋转方向由 Snail 相线或 DJI Assistant 设置完成。
 
 ## CubeMX 对接
@@ -49,8 +51,8 @@ CubeMX 重新生成后必须确认 `tim.c/h`、TIM1 MSP 和 `cmake/stm32cubemx/C
 仍存在。PWM 启动属于任务上下文，不需要 TIM1 中断或 FreeRTOS ISR API。
 
 第一次上电前按 C615 手册完成 PWM 行程校准，并准备急停。正式运行当前以
-`FEED_MOTOR_SNAIL_ACTIVE_PULSE_US=1520 us`、`MAX_PULSE_US=1550 us` 为调参起点，
-对应参考工程的 `FRIC_DOWN/FRIC_UP`。实际转速、供弹能力和温升仍需台架确认。
+`FEED_MOTOR_SNAIL_ACTIVE_PULSE_US=1400 us`、`MAX_PULSE_US=1550 us` 保留本轮起始源码配置。
+1400 us 的真实起转和带载能力仍需确认；参考例程的 1520 us 不能当作当前默认值。
 
 ## 调参入口
 
@@ -58,7 +60,7 @@ C615 的任务参数集中在 `Core/Inc/task/task_feed_motor/task_feed_motor_con
 `FEED_MOTOR_SNAIL_STOP_PULSE_US=1000`、`MAX_PULSE_US=1550`、
 独立测试默认先输出停止脉宽 3000 ms，再执行活动 Ramp；测试头文件中的
 `SNAIL_2305_TEST_STARTUP_STOP_TIME_MS` 可调整等待时间。正式供弹仍使用
-`ACTIVE_PULSE_US=1520`、`RAMP_TIME_MS=300`（这些宏带 `FEED_MOTOR_SNAIL_` 前缀）。
+`ACTIVE_PULSE_US=1400`、`RAMP_TIME_MS=10`（这些宏带 `FEED_MOTOR_SNAIL_` 前缀），只对启动使用 Ramp，Shift 松键直接停止。
 供弹运行时将这些参数组装为 `Snail2305_ConfigTypeDef`，斜率为
 `(ACTIVE-STOP)*1000/RAMP_TIME_MS` us/s。活动脉宽必须大于停止脉宽且不超过最大脉宽。
 

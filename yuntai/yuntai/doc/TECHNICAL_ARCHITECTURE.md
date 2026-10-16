@@ -87,7 +87,7 @@ CAN FIFO0 中断
 供弹任务
   → 命令年龄门 + C610 反馈年龄门
   → C615 脉宽 Ramp
-  → 供弹状态机 + M2006 停滞确认
+  → 供弹步长状态机 + M2006 固定电流
   → C610_M2006_SetCurrent()/SetOutputEnabled()
   → C610_M2006_SendAll() → CAN 0x200
 ```
@@ -174,13 +174,13 @@ u_k=\operatorname{clamp}(u^*,u_{min},u_{max})
 
 首帧把 `previous_error` 设为当前误差，避免默认上一误差为 0 导致微分尖峰。输出饱和时，只有能把输出拉回饱和区的积分方向才被保存，这就是抗积分饱和。
 
-供弹 M2006 当前不使用 PID 或固定角度目标。单发/连发直接发送配置的固定供弹电流：
+供弹 M2006 当前不使用 PID。每个步长直接发送配置的固定供弹电流：
 
 \[
 I_{feed}=FEED\_MOTOR\_FEED\_CURRENT\_RAW\times FEED\_MOTOR\_CURRENT\_SIGN
 \]
 
-单发是否结束由连续角度的停滞窗口判定，不由位置误差或步长判定。电流仍受
+步长是否结束由连续角度目标比较判定。电流仍受
 `FEED_MOTOR_MAX_CURRENT_RAW` 和 C610 协议范围限制。
 
 Yaw/Pitch 的速度内环使用完整 PID；位置外环的积分候选在目标速度饱和且误差仍向饱和方向时回退上一周期积分，避免“大误差一次积分后反向越限”。
@@ -196,13 +196,13 @@ Yaw/Pitch 的速度内环使用完整 PID；位置外环的积分候选在目标
 x_k=x_{k-1}+\operatorname{clamp}(x^*-x_{k-1},-\Delta_{max},+\Delta_{max})
 \]
 
-C615 由 `1000~1520 us` 在 `300 ms` 内变化，速率为：
+C615 当前由 `1000~1400 us` 在 `10 ms` 内启动，速率为：
 
 \[
-r_{PWM}=\frac{1520-1000}{0.300}=1733.33\;us/s
+r_{PWM}=\frac{1400-1000}{0.010}=40000\;us/s
 \]
 
-故障路径调用 `Snail2305_Stop()` 重建 Ramp 起点并立即写停止值；通信故障不能等待正常减速 Ramp。
+Shift 释放或故障均调用 `Snail2305_Stop()` 重建 Ramp 起点并立即写停止值，不等待减速 Ramp。CCR 预装载最迟下一 20 ms 周期生效，实际轮子停止仍受惯性影响。
 
 ### 5.3 一阶低通
 
@@ -366,7 +366,7 @@ Yaw 默认关闭重力补偿；Pitch 当前默认偏置 4500 raw、幅值 1500 r
 - TIM1：1 MHz 计数、20000 us 周期，即 50 Hz。
 - M2006：CAN1、C610 ID1、反馈 `0x201`、控制 `0x200`。
 
-C615 是开环 PWM：停止值、活动值和 Ramp 由供弹配置提供；代码只知道最近写入的 CCR，不知道真实转速。M2006 单发不再使用固定角度步长，而是以固定电流驱动，观察连续反馈位置是否停止变化。
+C615 是开环 PWM：停止值、活动值和 Ramp 由供弹配置提供；代码只知道最近写入的 CCR，不知道真实转速。M2006 使用连续角度固定步长和固定电流；目标方向比较之外还检查本步实际位移，防止反馈方向配置错误导致无限输出。
 
 ### 7.2 命令和安全门
 
@@ -377,109 +377,82 @@ command_enabled = DBUS有效
                 && 供弹驱动初始化成功
 ```
 
-鼠标左键只作为状态机输入。命令超时或反馈失效当周期立即清 M2006 电流并写停止脉宽；
-短按释放不会中断正在进行的单发。连发释放左键当周期清零 M2006 电流，并将 C615 目标设为停止脉宽，PWM 按 Ramp 减速；命令/反馈失效直接写停止脉宽。
+鼠标左键和键盘 Shift 是两个独立命令：左键只进入 C610 步长状态机，Shift 只决定 C615 PWM 目标。
+命令超时或反馈失效当周期清零 C610，并直接写 C615 停止脉宽。
 
-### 7.3 状态机
+### 7.3 步长状态机
 
 | 状态 | 进入条件 | 输出 | 离开条件 |
 |---|---|---|---|
-| `STOP` | 无活动请求、单发结束且已松键、命令/反馈失效 | M2006=0；C615 停止 | 左键新的按下沿且安全门有效 |
-| `FRIC_SPINUP` | 左键按下沿 | M2006=0；C615 Ramp 到活动值 | 首发两路 `pulse_us` 都达到活动值后进入 `FEED` |
-| `FEED` | 首发预旋完成 | M2006 固定供弹电流；C615 保持活动 | 位置变化不超过停滞窗口，进入确认 |
-| `FEED_SETTLE` | `FEED` 首次观察到位置停滞 | M2006 继续固定电流；C615 保持活动 | 停滞持续确认后进入 `SINGLE_FIRE`；恢复移动则回 `FEED` |
-| `SINGLE_FIRE` | 上弹位置停滞确认完成 | M2006=0；C615 保持活动值 | 保持 `FEED_MOTOR_SINGLE_FIRE_HOLD_MS` 后进入等待或连发 |
-| `WAIT_RELEASE` | 单发完成且未达到长按阈值 | 两个电机停止 | 松键回 `STOP`；长按意图成立且仍按住进入 `CONTINUOUS_FEED` |
-| `CONTINUOUS_FEED` | 首发完成且左键长按达到阈值 | M2006 固定电流；C615 保持活动值 | 左键释放、命令超时或反馈失效 |
-
-单发路径严格为：
+| `STOP` | 没有未完成步长 | M2006=0；C615 由 Shift 独立控制 | 左键按下沿且安全门有效 |
+| `STEP` | 左键按下沿，或上一步停顿结束且仍长按 | M2006 固定步长电流；C615 由 Shift 独立控制 | 达到当前连续角度目标 |
+| `WAIT_NEXT_STEP` | 每步完成且仍按住；从到位时刻开始计停顿 | M2006=0；C615 由 Shift 独立控制 | 松键进入 STOP；长按阈值与停顿都满足才建立下一步 |
 
 ```text
-按下沿 → FRIC_SPINUP → FEED → FEED_SETTLE → SINGLE_FIRE → WAIT_RELEASE/CONTINUOUS_FEED
+左键按下沿 → STEP(target = angle_count + FEED_MOTOR_STEP_COUNTS)
+STEP → 目标达到且左键释放 → STOP
+STEP → 目标达到且左键仍按住 → WAIT_NEXT_STEP(记录到位Tick，立即零电流)
+WAIT_NEXT_STEP → 长按已满400 ms、到位后已满200 ms且仍按住 → STEP(以当前位置建立下一步)
+WAIT_NEXT_STEP → 左键释放 → STOP
+Shift 按住 → C615 活动 PWM；Shift 松开 → C615 停止 PWM
 ```
 
-左键释放只清除按下计时，不清除正在运行的单发。长按达到阈值只设置
-`continuous_requested`，不能跳过预旋、`FEED_SETTLE` 或提前进入发射保持。第一发结束后，若仍按住，
-才进入 `CONTINUOUS_FEED`；此后 C610 和 C615 同时持续运行，不再执行停滞判定。
+短按只完成一个步长。释放发生在步长中间时，C610 继续到目标后停止；释放不会反向或取消目标。
+长按在按下沿的 FreeRTOS Tick 起计满 400 ms，且本步到位后零电流停顿满 200 ms，才建立下一目标。
+两项计时使用独立起点、同源无符号 Tick 差和 `pdMS_TO_TICKS()`；停顿不能从按下沿计时，
+也不能在长按阈值达到后省略。停顿中松键取消重复；200 ms 由用户本轮确认。
+步长正负由 `FEED_MOTOR_STEP_COUNTS` 符号决定，比较分别使用 `>=` 或 `<=`。
 
-### 7.4 供弹停滞检测和摩擦轮时序
+### 7.4 步长计算和 PWM
 
-当前宏：
-
-```c
-FEED_MOTOR_STALL_COUNTS          = 20;
-FEED_MOTOR_STALL_CONFIRM_MS     = 100;
-FEED_MOTOR_SINGLE_FIRE_HOLD_MS  = 150;
-FEED_MOTOR_CONTINUOUS_PRESS_MS  = 400;
-FEED_MOTOR_FEED_CURRENT_RAW      = 700;
-FEED_MOTOR_MAX_CURRENT_RAW       = 700;
-```
-
-首发 `FRIC_SPINUP` 先建立 C615 活动 PWM；随后单发 `FEED`/`FEED_SETTLE` 每个周期同时保持
-供弹电流和摩擦轮活动 PWM：
+连续反馈由 C610 驱动根据 8192 count/rev 展开，避免单圈 0/8191 回绕影响比较：
 
 ```c
-delta_count = angle_count - last_position_count;
-if (abs(delta_count) > FEED_MOTOR_STALL_COUNTS) {
-  last_position_count = angle_count;
-  stall_elapsed_ms = 0;
+target_count = angle_count + FEED_MOTOR_STEP_COUNTS;
+if (FEED_MOTOR_STEP_COUNTS > 0) {
+    reached = angle_count >= target_count;
 } else {
-  stall_elapsed_ms += dt_ms;
+    reached = angle_count <= target_count;
 }
-current_raw = FEED_MOTOR_FEED_CURRENT_RAW * FEED_MOTOR_CURRENT_SIGN;
+reached = reached || abs(angle_count - start_count) >=
+                   abs(target_count - start_count);
 ```
 
-当位置变化连续不超过 `20 count` 达到 `100 ms` 时，判定本次上弹位置已经保持，停止 C610
-并进入 `SINGLE_FIRE`。摩擦轮已经在上弹前预旋；若期间位置重新变化，确认计时清零并回到 `FEED`。
-本方案不设置停滞超时故障；
-电机卡死、机械阻力、反馈丢帧导致的误判必须通过急停台架观察。
+目标建立前检查 `int64_t` 加法边界，溢出会清零并进入 STOP。每次目标到位的周期都返回零电流，
+按住则保存 `step_finished_tick` 并进入 WAIT_NEXT_STEP。每周期等待长按和停顿条件，不阻塞任务；
+停顿结束后用最新反馈建立下一目标，不沿用惯性移动前的位置。电流公式为
+`sign(FEED_MOTOR_STEP_COUNTS) × FEED_MOTOR_FEED_CURRENT_RAW × FEED_MOTOR_CURRENT_SIGN`；
+当前 +4000 count、+1 电流符号对应 +5000 raw。+4000 count 是电机转子约 +175.78°，拨弹盘角度还需按实际减速比换算。
 
-摩擦轮进入 `FRIC_SPINUP` 后按正常 PWM Ramp 到活动值。只有两个 `pulse_us` 都达到活动值，
-才允许 C610 上弹；停滞确认结束后才开始 `150 ms` 的 `SINGLE_FIRE` 计时。预旋沿用
-`FEED_MOTOR_SNAIL_RAMP_TIME_MS=300 ms`，不增加额外等待。C615 没有转速反馈，达到 CCR 目标不等于实际机械转速已稳定。
+C610 不使用停滞窗口、预旋或单发保持；正在执行目标时不排队额外短按，目标处发零不提供主动位置制动，
+惯性超调待实测。C615 Shift 按下经 Ramp 启动，松开同周期直接写停止脉宽。位移条件只防止反向反馈导致
+目标不可达；长按仍会重复，不能代替方向确认。PWM CCR 不代表实际轮速。
 
 ### 7.5 供弹宏逐项说明
 
 | 宏 | 当前值 | 改变的算法或行为 |
 |---|---:|---|
-| `FEED_MOTOR_TASK_PERIOD_MS` | 2 ms | 任务周期；同时影响 PWM Ramp 和停滞/按键采样频率 |
+| `FEED_MOTOR_TASK_PERIOD_MS` | 2 ms | 任务周期和反馈采样周期 |
 | `FEED_MOTOR_INIT_RETRY_MS` | 100 ms | 初始化失败重试节流 |
-| `FEED_MOTOR_COMMAND_TIMEOUT_MS` | 100 ms | DBUS 命令年龄安全门 |
+| `FEED_MOTOR_COMMAND_TIMEOUT_MS` | 100 ms | 命令年龄安全门 |
 | `FEED_MOTOR_ID` | 1 | 反馈 `0x201` 和控制帧槽位 |
-| `FEED_MOTOR_STALL_COUNTS` | 20 count | 单发位置停滞窗口；增大可能提前判定转不动 |
-| `FEED_MOTOR_STALL_CONFIRM_MS` | 100 ms | 停滞连续确认时间；增大降低误判但延后结束上弹 |
-| `FEED_MOTOR_SINGLE_FIRE_HOLD_MS` | 150 ms | 上弹停滞确认完成后的 C615 单发保持时间 |
-| `FEED_MOTOR_CONTINUOUS_PRESS_MS` | 400 ms | 左键长按阈值；只设置连发意图，首发仍按单发完成 |
-| `FEED_MOTOR_FEED_CURRENT_RAW` | 700 raw | M2006 单发/连发固定供弹电流 |
-| `FEED_MOTOR_MAX_CURRENT_RAW` | 700 raw | C610 供弹电流安全上限 |
-| `FEED_MOTOR_FEEDBACK_SIGN` | +1 | 原始角度/速度到逻辑方向的符号；当前值待上板复核 |
-| `FEED_MOTOR_CURRENT_SIGN` | +1 | 逻辑控制电流到物理电流的符号；当前值待上板复核 |
-| `FEED_MOTOR_SNAIL_STOP_PULSE_US` | 1000 us | C615 停止输出 |
-| `FEED_MOTOR_SNAIL_ACTIVE_PULSE_US` | 1520 us | 正式摩擦轮活动目标；沿用参考工程 `FRIC_DOWN` |
-| `FEED_MOTOR_SNAIL_MAX_PULSE_US` | 1550 us | 正式运行上限，必须不小于活动目标 |
-| `FEED_MOTOR_SNAIL_RAMP_TIME_MS` | 300 ms | 1000→1520 us 的线性 Ramp 时间 |
-| `FEED_MOTOR_SNAIL_CH1/CH2_DIRECTION_SIGN` | +1/-1 | 方向配置校验和记录；实际方向由接线/电调决定 |
-| `FEED_MOTOR_ANGLE_STEP_TEST_ENABLE` | 0 | C610 手动角度测量开关；开启后只运行只读测试，不读取 DBUS/C615，并强制零电流 |
-| `FEED_MOTOR_ANGLE_STEP_TEST_FEEDBACK_SIGN` | -1 | 手动测量的逻辑角度/速度符号；独立于正式反馈方向 |
-| `FEED_MOTOR_ANGLE_STEP_TEST_LOG_PERIOD_MS` | 100 ms | 当前角度、相对基准和相邻增量的日志周期 |
+| `FEED_MOTOR_STEP_COUNTS` | +4000 count | 非零；沿用当前单发增量；符号同时决定目标和逻辑电流方向 |
+| `FEED_MOTOR_CONTINUOUS_PRESS_MS` | 400 ms | 长按连续步长阈值；短按完成一步后等待松键 |
+| `FEED_MOTOR_STEP_PAUSE_MS` | 200 ms | 用户确认；范围 (0,INT32_MAX] 且至少 1 Tick；每步到位后的零电流等待，增大降低重复频率 |
+| `FEED_MOTOR_FEED_CURRENT_RAW` | 5000 raw | STEP 阶段 C610 固定电流幅值，沿用本轮起始配置 |
+| `FEED_MOTOR_MAX_CURRENT_RAW` | 5000 raw | C610 供弹电流上限，沿用本轮起始配置 |
+| `FEED_MOTOR_FEEDBACK_SIGN` | +1 | 原始角度/速度到逻辑方向的符号 |
+| `FEED_MOTOR_CURRENT_SIGN` | +1 | 取 ±1；最终电流为步长符号 × 本符号 × 电流幅值 |
+| `FEED_MOTOR_SNAIL_STOP_PULSE_US` | 1000 us | Shift 松开和故障停止值 |
+| `FEED_MOTOR_SNAIL_ACTIVE_PULSE_US` | 1400 us | 范围 (STOP,MAX]；Shift 按住时的 C615 目标，沿用当前源码值 |
+| `FEED_MOTOR_SNAIL_MAX_PULSE_US` | 1550 us | PWM 运行上限 |
+| `FEED_MOTOR_SNAIL_RAMP_TIME_MS` | 10 ms | 正数；仅启动脉宽变化时间，松键停止绕过 Ramp |
+| `FEED_MOTOR_ANGLE_STEP_TEST_ENABLE` | 0 | C610 只读手动反馈测试开关 |
+| `FEED_MOTOR_ANGLE_STEP_TEST_FEEDBACK_SIGN` | -1 | 手动测试反馈符号 |
+| `FEED_MOTOR_ANGLE_STEP_TEST_LOG_PERIOD_MS` | 100 ms | 手动测试日志周期 |
 
-正式供弹和 C615 独立 PWM 测试仍由 `SNAIL_2305_TEST_ENABLE` 分支选择；C610 角度步长测试由 `FEED_MOTOR_ANGLE_STEP_TEST_ENABLE` 选择，并与 C615 独立 PWM 测试编译期互斥。C610 自循环和 C615 行程/转向校准测试已删除，避免测试参数误进入正式供弹路径。
-
-角度步长测试是只读手动测量路径，复用同一个 C610 驱动和反馈快照，不运行 PID：
-
-```text
-等待首帧在线并保存 reference_count
-  → logical_angle = angle_total_raw × TEST_FEEDBACK_SIGN
-  → delta_from_reference = logical_angle - reference_count
-  → delta_since_previous = logical_angle - previous_count
-  → 每周期关闭输出、提交 0 raw 电流
-```
-
-操作者手动转动拨弹机构，根据 `delta_from_reference` 的起止读数差或重复动作的角度
-增量确定一次拨弹需要的电机轴 count。测试宏只影响测试开关、坐标符号和日志频率；正式
-测试路径只用于确认反馈方向和手动位置变化，不再为正式控制提供步长参数；测试完成后必须恢复
-`FEED_MOTOR_ANGLE_STEP_TEST_ENABLE=0`，并在急停台架上确认停滞窗口、电流方向和单发保持时间。
-
+正式路径与两个独立硬件测试分支互斥。C610 自循环和 C615 行程/转向校准测试已删除。
+角度测试只读反馈并始终提交零电流；完成后必须恢复 `FEED_MOTOR_ANGLE_STEP_TEST_ENABLE=0`。
 ## 8. DBUS、日志和配置宏
 
 ### 8.1 DBUS 宏
@@ -554,7 +527,7 @@ C610 手动测量和正式供弹的连续角度/目标为 `int64_t`。输出前�
 |  | `GM6020_FEEDBACK_TIMEOUT_MS` | 100 ms | 轴运行时反馈安全门 |
 | `bsp/snail_2305/snail_2305.h` | `SNAIL_2305_MIN/MAX_PROTOCOL_PULSE_US` | 400/2200 us | C615 输出合法范围 |
 | `bsp/snail_2305/test_snail_2305.h` | `SNAIL_2305_TEST_ENABLE` | 0/1 | 独立 C615 测试编译开关 |
-|  | `SNAIL_2305_TEST_STOP/ACTIVE/MAX_PULSE_US` | 1000/1520/1550 us | 独立测试 PWM 目标和上限；正式活动值同为参考工程的 1520 us |
+|  | `SNAIL_2305_TEST_STOP/ACTIVE/MAX_PULSE_US` | 1000/1520/1550 us | 独立测试 PWM 目标和上限；正式活动值单独配置为 1400 us |
 |  | `SNAIL_2305_TEST_RAMP_TIME_MS` | 500 ms | 独立测试的上/下 Ramp |
 |  | `SNAIL_2305_TEST_STARTUP_STOP_TIME_MS` | 3000 ms | 测试上电后保持停止，等待电调识别 |
 |  | `SNAIL_2305_TEST_RUN_TIME_MS` | 0 | 0 表示持续活动，台架风险较高 |
@@ -573,10 +546,10 @@ C610 手动测量和正式供弹的连续角度/目标为 `int64_t`。输出前�
 | `GRAVITY_COMPENSATION_TWO_PI` | `2π` | 将编码器周期换成余弦输入弧度 |
 | `GRAVITY_COMPENSATION_COUNTS_PER_REV` | 8192 count | 重力模型的角度取模周期；不修改控制目标 |
 | `GM6020_ENCODER_COUNTS_PER_REV` | 8192 count | 云台速度积分和单圈反馈展开 |
-| `C610_M2006_ENCODER_COUNTS_PER_REV` | 8192 count | 供弹反馈连续角度展开；正式逻辑不把它换算成固定每发步长 |
+| `C610_M2006_ENCODER_COUNTS_PER_REV` | 8192 count | 供弹反馈连续角度展开；每发连续步长由任务配置提供 |
 | `SNAIL_2305_MIN/MAX_PROTOCOL_PULSE_US` | 400/2200 us | C615 驱动拒绝越界 PWM，防止错误脉宽进入电调 |
 
-因此，修改一圈计数时必须同时重新检查回绕阈值、角度积分和重力补偿周期；供弹单发是否到位仍由连续角度停滞窗口确认，不由固定步长换算决定。
+因此，修改一圈计数时必须同时重新检查回绕阈值、角度积分和重力补偿周期；供弹步长目标使用连续角度比较，不能直接使用单圈原始角度。
 
 ## 9. 故障、安全门和明确边界
 
@@ -593,14 +566,14 @@ C610 手动测量和正式供弹的连续角度/目标为 `int64_t`。输出前�
 ### 9.2 当前没有实现的功能
 
 正式供弹路径没有卡弹锁存、停滞超时故障、温度/热量限制、摩擦轮速度反馈、弹丸光电计数和发射成功判定。
-单发有位置停滞确认，但它只决定何时结束 C610 上弹并进入发射保持；摩擦轮在上弹前预旋。停滞不代表机械一定完成上弹。机械急停、方向、温升和卡弹风险必须由上板台架和操作员承担。
+步长完成条件使用连续目标方向比较和相对起点的等长位移兜底，不检测停滞或卡弹。机械急停、方向、每发 count、惯性超调、温升和供弹能力必须由上板台架确认。
 
 ### 9.3 必须保持的控制不变量
 
 1. 同一控制周期的角度、速度、电流和日志来自同一份反馈快照。
-2. 单发停滞确认只比较连续角度差；不能把单圈原始角度的回绕误认为静止。
-3. `dt_ms` 直接用于供弹停滞/按键确认和 C615 Ramp；阶段毫秒与 FreeRTOS Tick 比较时仍须转换。
-4. 反馈过期在本次任务检测和发送时强制零电流；故障停止 PWM 写入绕过 Ramp。下一次控制检测受任务调度延迟影响，不能承诺超时一到就物理停机。
+2. 步长目标只比较连续角度；不能把单圈原始角度直接用于目标比较。
+3. 实际 Tick 周期换算的 `dt_ms` 只推进 C615 启动 Ramp；长按从按下沿计时，步间停顿从每步到位计时，毫秒阈值须转换。每步到位先输出零，不可同周期建立下一目标。
+4. 反馈过期在本次任务检测和发送时强制零电流；Shift 释放或故障停止 PWM 均绕过 Ramp。控制检测受任务调度延迟影响，不能承诺同一瞬间物理停机。
 5. C610 与 GM6020 的电流上限按型号独立定义。
 6. 任何完成的功能修改都必须更新对应模块文档、总技术文档和变更记录。
 
@@ -627,7 +600,7 @@ cmake --build --preset Debug
 git diff --check -- .
 ```
 
-纯逻辑验证应覆盖：CAN 大端解析、8192 回绕、反馈超时、命令超时、PID 限幅/抗积分饱和、Ramp 单位、鼠标帧去重、供弹短按/长按、停滞确认、摩擦轮启动顺序、单发保持、连发释放和状态切换。软件验证不能代替 C615 方向、M2006 停滞阈值、拨弹盘机械动作、温升和卡弹台架测试。
+纯逻辑验证应覆盖：CAN 大端解析、8192 回绕、反馈超时、命令超时、PID 限幅/抗积分饱和、Ramp 单位、鼠标帧去重、供弹短按一步、长按连续步长、Shift 摩擦轮启停和步长状态切换。软件验证不能代替 C615 方向、M2006 每发 count、拨弹盘机械动作、温升和卡弹台架测试。
 
 ## 11. 文档维护规则
 
@@ -649,7 +622,7 @@ git diff --check -- .
 以下内容继续由 `doc/OPEN_QUESTIONS.md` 管理，不能仅凭软件构建关闭：
 
 - C615 PE9/PE11 信号线、PWM 停止点、两个摩擦轮真实转向和长期温升。
-- 正式及独立测试 1520/1550 us 对应的真实转速、弹丸夹持力和持续供弹频率。
+- 正式 1400 us 及独立测试 1520 us 对应的真实转速、弹丸夹持力、1550 us 上限温升和持续供弹频率。
 - M2006 CAN ID、`FEED_MOTOR_FEEDBACK_SIGN=+1` 与 `FEED_MOTOR_CURRENT_SIGN=+1` 是否符合实机方向。
 - 手动测得的一次可靠拨弹 count；拨弹盘齿数、减速比、机械间隙和方向。
 - Yaw/Pitch 标定中心、边界、GM6020 电流方向和 Pitch 重力补偿温升。
@@ -670,7 +643,7 @@ APB1 PCLK      = 168 MHz / 4 = 42 MHz
 APB2 PCLK      = 168 MHz / 2 = 84 MHz
 ```
 
-STM32F4 的定时器在 APB 分频不为 1 时获得 `2×PCLK`，因此 TIM1 的输入时钟为 168 MHz。TIM1 的 `PSC=167` 先得到 1 MHz 计数，`ARR=19999` 产生 20,000 个计数的周期，即 50 Hz；CCR 的整数值直接表示微秒脉宽。C615 活动 1520 us 不是“1520 个 CPU 周期”，而是 1.520 ms 的高电平时间。
+STM32F4 的定时器在 APB 分频不为 1 时获得 `2×PCLK`，因此 TIM1 的输入时钟为 168 MHz。TIM1 的 `PSC=167` 先得到 1 MHz 计数，`ARR=19999` 产生 20,000 个计数的周期，即 50 Hz；CCR 的整数值直接表示微秒脉宽。C615 当前正式活动 1400 us 对应 1.400 ms 高电平时间。
 
 CAN1 的位时序为 `Prescaler=3, BS1=10TQ, BS2=3TQ, SJW=1TQ`，每位包含 `1+10+3=14TQ`，所以：
 
@@ -791,9 +764,3 @@ flowchart LR
 ```
 
 图中 ISR 只做搬运、解码和反馈字段更新；PID、Ramp、日志格式化和 CAN 发送均在任务上下文执行。任何新路径若在 ISR 中加入阻塞、浮点控制、日志或普通 FreeRTOS API，都违反这个时序边界。
-
-
-
-
-
-

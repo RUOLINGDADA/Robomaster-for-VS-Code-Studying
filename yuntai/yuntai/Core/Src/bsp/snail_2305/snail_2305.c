@@ -159,6 +159,6 @@ bool Snail2305_Process(Snail2305_HandleTypeDef *motor, uint32_t dt_ms) {
  * @note 仅所属任务调用。用于通信故障。PWM 信号保持运行。
  */
 bool Snail2305_Stop(Snail2305_HandleTypeDef *motor) {
-  /* 通信故障绕过 Ramp 并重置历史。正常松键由运行时设停止目标，保留减速斜坡。 */
+  /* 立即取消油门并重置 Ramp；故障和 Shift 松键共用此路径，实际停转仍受惯性影响。 */
   return Snail2305_IsInitialized(motor) && Snail2305_SetPulse(motor, motor->config.stop_pulse_us);
 }

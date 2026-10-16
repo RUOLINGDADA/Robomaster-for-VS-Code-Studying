@@ -24,6 +24,9 @@
 #ifndef LOG_FEED_MOTOR_ENABLE
 #define LOG_FEED_MOTOR_ENABLE 1U /* 供弹日志开关，0/1；关闭初始化、正式和 C610 测试日志。 */
 #endif
+#ifndef LOG_CHASSIS_ENABLE
+#define LOG_CHASSIS_ENABLE 0U /* 底盘日志开关，0/1；与 TASK 同开，默认关闭以保留串口带宽。 */
+#endif
 #ifndef LOG_TASK_ENABLE
 #define LOG_TASK_ENABLE 0U /* 正式任务日志总开关，0/1；与各电机开关同时开启才输出。 */
 #endif
@@ -45,6 +48,6 @@ _Static_assert(LOG_SWITCH_VALID(LOG_GLOBAL_ENABLE) && LOG_SWITCH_VALID(LOG_USART
                LOG_SWITCH_VALID(LOG_YAW_ENABLE) && LOG_SWITCH_VALID(LOG_PITCH_ENABLE) &&
                LOG_SWITCH_VALID(LOG_FEED_MOTOR_ENABLE) && LOG_SWITCH_VALID(LOG_TASK_ENABLE) &&
                LOG_SWITCH_VALID(LOG_TEST_ENABLE) && LOG_SWITCH_VALID(LOG_DBUS_TEXT_ENABLE) &&
-               LOG_SWITCH_VALID(LOG_DBUS_CHART_ENABLE), "log switches must be 0 or 1");
+               LOG_SWITCH_VALID(LOG_DBUS_CHART_ENABLE) && LOG_SWITCH_VALID(LOG_CHASSIS_ENABLE), "log switches must be 0 or 1");
 
 #endif /* APP_LOG_CONFIG_H */

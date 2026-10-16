@@ -23,7 +23,20 @@ typedef struct {
   float integral; /* 已包含 ki 的积分项，与输出同单位；所属任务更新，Reset 清零。 */
   float previous_error; /* 上次误差，与本次 error 同单位；Update 写入，Reset 清零。 */
   bool initialized; /* 已有可差分的误差历史；Reset 后 false，首帧避免微分尖峰。 */
+  float integral_error_scale; /* 变速积分系数，1/误差单位；Init 默认 0，普通积分不加权。 */
+  bool trapezoidal_integral; /* true 使用前后误差的梯形积分；Init 默认 false，保持已有矩形积分。 */
 } Pid_ControllerTypeDef;
+
+/**
+ * @brief 配置可选积分方式，不改变其它 PID 参数。
+ * @param controller 已初始化且由当前任务独占的控制器。
+ * @param error_scale 非负有限系数，1/误差单位；权重为 1/(1+a*abs(error))，0 禁用加权。
+ * @param trapezoidal true 使用梯形积分；false 保持矩形积分。
+ * @retval true 已应用并清历史；false 参数非法，控制器不变。
+ * @note 仅所属控制任务调用；Reset 保留此配置，Init 恢复默认关闭。
+ */
+bool Pid_ConfigureIntegral(Pid_ControllerTypeDef *controller,
+                           float error_scale, bool trapezoidal);
 
 /**
  * @brief 复制 PID 参数并清除控制历史。

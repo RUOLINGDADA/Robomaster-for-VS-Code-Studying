@@ -28,6 +28,26 @@ function Get-MaskedSource([string]$source) {
 function Get-Mechanism([string]$name) {
   switch -Regex ($name) {
     '_H$' { return '包含保护：避免同一翻译单元重复声明，没有控制算法。' }
+    '^CHASSIS_WHEEL_COUNT$' { return '四轮数组容量，顺序为CAN1 ID1右前、ID2左前、ID3左后、ID4右后。' }
+    '^CHASSIS_ID[1-4]_SIGN$' { return '安装符号±1，同时变换本轮反馈rpm与发送电流；不是两个独立符号。' }
+    '^CHASSIS_STICK_DEADBAND_RAW$' { return '严格-阈值<raw<阈值归零；外部raw/660×MAX_SPEED_RPM，不扣死区宽度。' }
+    '^CHASSIS_MAX_SPEED_RPM$' { return '三轴与各轮目标限幅，转子rpm；逐轮混控后钳位，不整体归一化。' }
+    '^CHASSIS_SPEED_KI$' { return '底盘梯形积分增量Ki×(e+e_prev)/2×dt_s/(1+a×abs(e))，单位raw。' }
+    '^CHASSIS_INTEGRAL_LIMIT_RAW$' { return '底盘四个独立速度PID的积分raw限幅；总电流另行限幅。' }
+    '^CHASSIS_INTEGRAL_ERROR_SCALE$' { return '变速积分a，1/rpm；权重1/(1+a×abs(e))，0禁用权重。' }
+    '^CHASSIS_CURRENT_LIMIT_RAW$' { return '速度PID实际限流±4915 raw约6A；不得超过C620协议±16384 raw。' }
+    '^CHASSIS_KEYBOARD_T1_MS$' { return '键盘曲线直线段结束时刻ms，届时达到LINEAR_RATIO；配置换算为秒。' }
+    '^CHASSIS_KEYBOARD_T3_MS$' { return '曲线达到终点的时刻ms，反向先用同样时长过零；松键立即零目标。' }
+    '^CHASSIS_KEYBOARD_LINEAR_RATIO$' { return 'T1时的过渡幅度比例(0,1)，改变起步斜率和对数接入修正。' }
+    '^CHASSIS_KEYBOARD_LOG_SHAPE$' { return '平滑对数段形状系数>0；两端三次修正保持值与斜率衔接，须复核单调性。' }
+    '^CHASSIS_COMMAND_TIMEOUT_MS$' { return '原始HAL接收时间戳年龄>100ms，底盘回STOP并清键/历史、四轮零电流。' }
+    '^CHASSIS_FEEDBACK_TIMEOUT_MS$' { return '真实反馈HAL年龄>100ms，仅停止该轮并清其PID，发送入口再次复核。' }
+    '^CHASSIS_CONTROL_GAP_MS$' { return 'HAL实际间隔为0或超过阈值则四轮零并清历史，正常间隔换秒给PID。' }
+    '^CHASSIS_TASK_PERIOD_MS$' { return '底盘vTaskDelayUntil调度周期，经pdMS_TO_TICKS转换；PID使用实际HAL间隔。' }
+    '^C620_M3508_CURRENT_LIMIT_RAW$' { return 'C620协议电流raw边界±16384约20A；与底盘实际限流分开。' }
+    '^C620_M3508_(FEEDBACK_BASE_ID|CONTROL_LOW_ID|CONTROL_HIGH_ID)$' { return 'C620标准反馈0x200+ID；ID1~4控制0x200、ID5~8控制0x1FF，每槽大端2字节。' }
+    '^C620_M3508_FRAME_BYTES$' { return 'C620标准数据帧长度8字节；帧校验与负载数组使用。' }
+    '^C620_M3508_MAX_DEVICES$' { return '静态注册容量8个；同总线ID与句柄地址不能重复。' }
     'POSITION_KP' { return '位置P：位置误差count乘增益得到rpm（供弹得到电流raw）；见总文档§5/6/7。' }
     'POSITION_KI' { return '位置积分：Ki×误差×dt_s；目标速度饱和且误差向外时恢复上一积分。' }
     'POSITION_KD' { return '位置阻尼：Kd×(命令rpm−滤波rpm)×8192/60。' }
@@ -167,10 +187,18 @@ $snippets=@(
  @('Core/Src/bsp/dbus/dbus.c','Dbus_Process','邮箱排空、epoch旧帧拒绝和鼠标位移累计。'),
  @('Core/Src/bsp/dbus/dbus.c','Dbus_GetSnapshot','同一快照复制并消费累计鼠标位移。'),
  @('Core/Src/task/task_dbus/task_dbus_runtime.c','DbusTask_MapChannel','摇杆死区和raw→千分比。'),
- @('Core/Src/task/task_dbus/task_dbus_runtime.c','DbusTask_RuntimeRunCycle','同一DBUS快照生成三份命令，保留真实时间戳。'),
+ @('Core/Src/task/task_dbus/task_dbus_runtime.c','DbusTask_RuntimeRunCycle','同一DBUS快照生成四份命令，保留真实时间戳，不二次消费鼠标。'),
  @('Core/Src/algorithm/mouse_virtual_joystick/mouse_virtual_joystick.c','MouseVirtualJoystick_AdvanceAxis','固定锚点和绝对时间控制保持/回中。'),
  @('Core/Src/algorithm/mouse_virtual_joystick/mouse_virtual_joystick.c','MouseVirtualJoystick_Update','去重、时序校验、分轴累计和输出。'),
  @('Core/Src/algorithm/pid/pid.c','Pid_Update','候选积分、微分首帧、限幅和抗积分饱和。'),
+ @('Core/Src/algorithm/pid/pid.c','Pid_ConfigureIntegral','默认关闭的变速/梯形积分配置；Reset保留选项。'),
+ @('Core/Src/app/chassis/chassis_control.c','ChassisControl_Profile','源普通底盘的直线和平滑对数曲线。'),
+ @('Core/Src/app/chassis/chassis_control.c','ChassisControl_Update','三轴输入、四轮混控和独立PID；不访问HAL。'),
+ @('Core/Src/task/task_chassis/task_chassis_command.c','ChassisCommand_Submit','Ctrl按下事件、通信代数与一致值副本。'),
+ @('Core/Src/task/task_chassis/task_chassis_command.c','ChassisCommand_GetSnapshot','原始HAL时间戳超时门，不消费鼠标。'),
+ @('Core/Src/task/task_chassis/task_chassis_runtime.c','ChassisTask_RuntimeRunCycle','唯一底盘任务消费事件、快照、安全门和聚合发送。'),
+ @('Core/Src/bsp/m3508_c620/m3508_c620.c','C620_M3508_HandleRxMessage','CAN1 C620标准反馈校验和大端解析。'),
+ @('Core/Src/bsp/m3508_c620/m3508_c620.c','C620_M3508_SendAll','首帧/新鲜度/BOFF复核，临界区构建到HAL提交。'),
  @('Core/Src/algorithm/ramp/ramp.c','Ramp_Update','rate×dt_s限制单周期变化。'),
  @('Core/Src/algorithm/filter/low_pass_filter.c','LowPassFilter_Update','速度反馈低通。'),
  @('Core/Src/algorithm/gravity_compensation/gravity_compensation.c','GravityCompensation_Update','int64角差、周期取模和余弦补偿。'),
@@ -192,7 +220,7 @@ $snippets=@(
 $impl=[Text.StringBuilder]::new()
 [void]$impl.AppendLine('# 关键实现代码与调用说明')
 [void]$impl.AppendLine()
-[void]$impl.AppendLine('按输入→算法→云台→供弹→日志排列，以下为当前源码原样摘录，不是独立编译的另一套算法。初始化、类型和辅助函数沿源文件链接查阅。重复函数名取最后定义，避开未启用HAL的桩函数。')
+[void]$impl.AppendLine('按输入→算法/底盘→云台→供弹→日志排列，以下为当前源码原样摘录，不是独立编译的另一套算法。初始化、类型和辅助函数沿源文件链接查阅。重复函数名取最后定义，避开未启用HAL的桩函数。')
 [void]$impl.AppendLine()
 [void]$impl.AppendLine('从工程根运行 powershell -NoProfile -File doc/tools/update_technical_reference.ps1 可重建本文件和宏索引。原理推导和实测状态仍需同步 [技术总文档](TECHNICAL_ARCHITECTURE.md)。')
 foreach($item in $snippets) {

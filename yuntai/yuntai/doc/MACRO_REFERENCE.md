@@ -74,6 +74,32 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
 
+## Core/Inc/app/chassis/chassis_control.h
+
+### APP_CHASSIS_CONTROL_H（第 9 行定义）
+
+```c
+#define APP_CHASSIS_CONTROL_H /* 防止重复包含。 */
+```
+
+包含保护：避免同一翻译单元重复声明，没有控制算法。
+
+源文件：[Core/Inc/app/chassis/chassis_control.h](../Core/Inc/app/chassis/chassis_control.h)。
+
+Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
+
+### CHASSIS_WHEEL_COUNT（第 13 行定义）
+
+```c
+#define CHASSIS_WHEEL_COUNT 4U /* 底盘轮数，个；数组顺序为电调 ID1~4。 */
+```
+
+四轮数组容量，顺序为CAN1 ID1右前、ID2左前、ID3左后、ID4右后。
+
+源文件：[Core/Inc/app/chassis/chassis_control.h](../Core/Inc/app/chassis/chassis_control.h)。
+
+Core引用：[Core/Inc/app/chassis/chassis_control.h](../Core/Inc/app/chassis/chassis_control.h) 第 50 行；[Core/Inc/task/task_chassis/task_chassis_runtime.h](../Core/Inc/task/task_chassis/task_chassis_runtime.h) 第 14 行；[Core/Src/app/chassis/chassis_control.c](../Core/Src/app/chassis/chassis_control.c) 第 103 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 15 行。
+
 ## Core/Inc/app/gimbal/gimbal_axis.h
 
 ### GIMBAL_AXIS_H（第 11 行定义）
@@ -214,10 +240,11 @@ Core引用：[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm60
 
 Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
 
-### LOG_ENABLED_CATEGORY_MASK（第 31 行定义）
+### LOG_ENABLED_CATEGORY_MASK（第 32 行定义）
 
 ```c
 #define LOG_ENABLED_CATEGORY_MASK ( \
+    (LOG_TASK_ENABLE && LOG_CHASSIS_ENABLE ? LOG_CATEGORY_CHASSIS : 0U) | \
     (LOG_DBUS_TEXT_ENABLE ? LOG_CATEGORY_DBUS_TEXT : 0U) | \
     (LOG_DBUS_CHART_ENABLE ? LOG_CATEGORY_DBUS_CHART : 0U) | \
     (LOG_TASK_ENABLE && LOG_YAW_ENABLE ? LOG_CATEGORY_YAW : 0U) | \
@@ -232,9 +259,9 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 源文件：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 42 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 44 行。
 
-### LOG_CATEGORY_ENABLED（第 41 行定义）
+### LOG_CATEGORY_ENABLED（第 43 行定义）
 
 ```c
 #define LOG_CATEGORY_ENABLED(category) (LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && \
@@ -247,7 +274,7 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 42 行。
 
 Core引用：[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 79 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 53 行。
 
-### LOG_TRY_PRINTF（第 45 行定义）
+### LOG_TRY_PRINTF（第 47 行定义）
 
 ```c
 #define LOG_TRY_PRINTF(category, ...) (LOG_CATEGORY_ENABLED(category) ? \
@@ -258,9 +285,9 @@ Core引用：[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm60
 
 源文件：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h)。
 
-Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 178 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 201 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 118 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 116 行。
+Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 59 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 189 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 201 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 118 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 116 行。
 
-### LOG_TRY_PRINTF（第 48 行定义）
+### LOG_TRY_PRINTF（第 50 行定义）
 
 ```c
 #define LOG_TRY_PRINTF(category, ...) (false) /* 总开关关闭，不计算分类和格式参数。 */
@@ -270,7 +297,7 @@ Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/
 
 源文件：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h)。
 
-Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 178 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 201 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 118 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 116 行。
+Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 59 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 189 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 201 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 118 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 116 行。
 
 ## Core/Inc/app/log/log_config.h
 
@@ -296,7 +323,7 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 44 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 44 行；[Core/Src/app/log/log.c](../Core/Src/app/log/log.c) 第 17 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 59 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 116 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 114 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 46 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 47 行；[Core/Src/app/log/log.c](../Core/Src/app/log/log.c) 第 17 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 52 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 60 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 116 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 114 行。
 
 ### LOG_USART1_ENABLE（第 16 行定义）
 
@@ -308,7 +335,7 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 44 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 44 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 44 行；[Core/Src/app/log/log.c](../Core/Src/app/log/log.c) 第 17 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 59 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 116 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 114 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 46 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 47 行；[Core/Src/app/log/log.c](../Core/Src/app/log/log.c) 第 17 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 52 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 60 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 116 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 114 行。
 
 ### LOG_YAW_ENABLE（第 19 行定义）
 
@@ -320,7 +347,7 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 44 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 34 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 45 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 114 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 36 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 48 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 114 行。
 
 ### LOG_PITCH_ENABLE（第 22 行定义）
 
@@ -332,7 +359,7 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 34 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 35 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 45 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 116 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 37 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 48 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 116 行。
 
 ### LOG_FEED_MOTOR_ENABLE（第 25 行定义）
 
@@ -344,9 +371,21 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 35 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 36 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 46 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 38 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 49 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行。
 
-### LOG_TASK_ENABLE（第 28 行定义）
+### LOG_CHASSIS_ENABLE（第 28 行定义）
+
+```c
+#define LOG_CHASSIS_ENABLE 0U /* 底盘日志开关，0/1；与 TASK 同开，默认关闭以保留串口带宽。 */
+```
+
+编译期日志开关/图表前缀，仅控制诊断，不控制电机使能。
+
+源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
+
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 33 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 51 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 52 行。
+
+### LOG_TASK_ENABLE（第 31 行定义）
 
 ```c
 #define LOG_TASK_ENABLE 0U /* 正式任务日志总开关，0/1；与各电机开关同时开启才输出。 */
@@ -356,9 +395,9 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 36 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 34 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 46 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 116 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 114 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 33 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 49 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 52 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 116 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 114 行。
 
-### LOG_TEST_ENABLE（第 31 行定义）
+### LOG_TEST_ENABLE（第 34 行定义）
 
 ```c
 #define LOG_TEST_ENABLE 1U /* 硬件测试日志总开关，0/1；与各电机开关同时开启才输出。 */
@@ -368,9 +407,9 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 34 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 37 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 47 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 39 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 50 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行。
 
-### LOG_DBUS_TEXT_ENABLE（第 34 行定义）
+### LOG_DBUS_TEXT_ENABLE（第 37 行定义）
 
 ```c
 #define LOG_DBUS_TEXT_ENABLE 0U /* DBUS 文本开关，0/1；输出原始数据和接收状态。 */
@@ -380,9 +419,9 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 37 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 32 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 47 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 59 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 34 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 50 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 60 行。
 
-### LOG_DBUS_CHART_ENABLE（第 37 行定义）
+### LOG_DBUS_CHART_ENABLE（第 40 行定义）
 
 ```c
 #define LOG_DBUS_CHART_ENABLE 0U /* DBUS 图表开关，0/1；输出 10 通道 ch: 帧。 */
@@ -392,9 +431,9 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 32 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 33 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 48 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 59 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 35 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 51 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 60 行。
 
-### LOG_CHART_PREFIX（第 40 行定义）
+### LOG_CHART_PREFIX（第 43 行定义）
 
 ```c
 #define LOG_CHART_PREFIX "ch:" /* 图表前缀，1~16 字节；与上位机一致，不含逗号、换行或 %。 */
@@ -404,9 +443,9 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 33 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 62 行。
+Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 63 行。
 
-### LOG_SWITCH_VALID（第 43 行定义）
+### LOG_SWITCH_VALID（第 46 行定义）
 
 ```c
 #define LOG_SWITCH_VALID(value) ((value) == 0U || (value) == 1U) /* 开关只接受 0/1，拒绝负数和时长。 */
@@ -416,7 +455,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 44 行。
+Core引用：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 47 行。
 
 ## Core/Inc/bsp/c610_m2006/c610_m2006.h
 
@@ -626,7 +665,7 @@ Core引用：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c) 第 62 行�
 
 源文件：[Core/Inc/bsp/dbus/dbus.h](../Core/Inc/bsp/dbus/dbus.h)。
 
-Core引用：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c) 第 85 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 23 行。
+Core引用：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c) 第 85 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 24 行。
 
 ### DBUS_OFFLINE_TIMEOUT_MS（第 19 行定义）
 
@@ -921,6 +960,92 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 源文件：[Core/Inc/bsp/gm6020/test_gm6020_calibration.h](../Core/Inc/bsp/gm6020/test_gm6020_calibration.h)。
 
 Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
+
+## Core/Inc/bsp/m3508_c620/m3508_c620.h
+
+### BSP_M3508_C620_H（第 9 行定义）
+
+```c
+#define BSP_M3508_C620_H /* 防止重复包含。 */
+```
+
+包含保护：避免同一翻译单元重复声明，没有控制算法。
+
+源文件：[Core/Inc/bsp/m3508_c620/m3508_c620.h](../Core/Inc/bsp/m3508_c620/m3508_c620.h)。
+
+Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
+
+### C620_M3508_MAX_DEVICES（第 14 行定义）
+
+```c
+#define C620_M3508_MAX_DEVICES 8U /* 静态注册容量，个；支持电调 ID1~8。 */
+```
+
+静态注册容量8个；同总线ID与句柄地址不能重复。
+
+源文件：[Core/Inc/bsp/m3508_c620/m3508_c620.h](../Core/Inc/bsp/m3508_c620/m3508_c620.h)。
+
+Core引用：[Core/Src/bsp/m3508_c620/m3508_c620.c](../Core/Src/bsp/m3508_c620/m3508_c620.c) 第 12 行。
+
+### C620_M3508_CURRENT_LIMIT_RAW（第 15 行定义）
+
+```c
+#define C620_M3508_CURRENT_LIMIT_RAW 16384 /* 官方电流指令绝对上限，raw，约 20 A。 */
+```
+
+C620协议电流raw边界±16384约20A；与底盘实际限流分开。
+
+源文件：[Core/Inc/bsp/m3508_c620/m3508_c620.h](../Core/Inc/bsp/m3508_c620/m3508_c620.h)。
+
+Core引用：[Core/Src/bsp/m3508_c620/m3508_c620.c](../Core/Src/bsp/m3508_c620/m3508_c620.c) 第 121 行。
+
+### C620_M3508_FEEDBACK_BASE_ID（第 16 行定义）
+
+```c
+#define C620_M3508_FEEDBACK_BASE_ID 0x200U /* 标准反馈 ID=0x200+电调 ID。 */
+```
+
+C620标准反馈0x200+ID；ID1~4控制0x200、ID5~8控制0x1FF，每槽大端2字节。
+
+源文件：[Core/Inc/bsp/m3508_c620/m3508_c620.h](../Core/Inc/bsp/m3508_c620/m3508_c620.h)。
+
+Core引用：[Core/Src/bsp/m3508_c620/m3508_c620.c](../Core/Src/bsp/m3508_c620/m3508_c620.c) 第 145 行。
+
+### C620_M3508_CONTROL_LOW_ID（第 17 行定义）
+
+```c
+#define C620_M3508_CONTROL_LOW_ID 0x200U /* ID1~4 的标准电流控制帧，每槽 2 字节。 */
+```
+
+C620标准反馈0x200+ID；ID1~4控制0x200、ID5~8控制0x1FF，每槽大端2字节。
+
+源文件：[Core/Inc/bsp/m3508_c620/m3508_c620.h](../Core/Inc/bsp/m3508_c620/m3508_c620.h)。
+
+Core引用：[Core/Src/bsp/m3508_c620/m3508_c620.c](../Core/Src/bsp/m3508_c620/m3508_c620.c) 第 191 行。
+
+### C620_M3508_CONTROL_HIGH_ID（第 18 行定义）
+
+```c
+#define C620_M3508_CONTROL_HIGH_ID 0x1FFU /* ID5~8 的标准电流控制帧。 */
+```
+
+C620标准反馈0x200+ID；ID1~4控制0x200、ID5~8控制0x1FF，每槽大端2字节。
+
+源文件：[Core/Inc/bsp/m3508_c620/m3508_c620.h](../Core/Inc/bsp/m3508_c620/m3508_c620.h)。
+
+Core引用：[Core/Src/bsp/m3508_c620/m3508_c620.c](../Core/Src/bsp/m3508_c620/m3508_c620.c) 第 192 行。
+
+### C620_M3508_FRAME_BYTES（第 19 行定义）
+
+```c
+#define C620_M3508_FRAME_BYTES 8U /* C620 标准数据帧长度，字节。 */
+```
+
+C620标准数据帧长度8字节；帧校验与负载数组使用。
+
+源文件：[Core/Inc/bsp/m3508_c620/m3508_c620.h](../Core/Inc/bsp/m3508_c620/m3508_c620.h)。
+
+Core引用：[Core/Src/bsp/m3508_c620/m3508_c620.c](../Core/Src/bsp/m3508_c620/m3508_c620.c) 第 144 行。
 
 ## Core/Inc/bsp/snail_2305/snail_2305.h
 
@@ -3124,6 +3249,326 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
 
+## Core/Inc/task/task_chassis/task_chassis.h
+
+### TASK_CHASSIS_H（第 9 行定义）
+
+```c
+#define TASK_CHASSIS_H /* 防止重复包含。 */
+```
+
+包含保护：避免同一翻译单元重复声明，没有控制算法。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis.h](../Core/Inc/task/task_chassis/task_chassis.h)。
+
+Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
+
+## Core/Inc/task/task_chassis/task_chassis_command.h
+
+### TASK_CHASSIS_COMMAND_H（第 9 行定义）
+
+```c
+#define TASK_CHASSIS_COMMAND_H /* 防止重复包含。 */
+```
+
+包含保护：避免同一翻译单元重复声明，没有控制算法。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_command.h](../Core/Inc/task/task_chassis/task_chassis_command.h)。
+
+Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
+
+## Core/Inc/task/task_chassis/task_chassis_config.h
+
+### TASK_CHASSIS_CONFIG_H（第 9 行定义）
+
+```c
+#define TASK_CHASSIS_CONFIG_H /* 防止重复包含。 */
+```
+
+包含保护：避免同一翻译单元重复声明，没有控制算法。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
+
+### CHASSIS_TASK_PERIOD_MS（第 12 行定义）
+
+```c
+#define CHASSIS_TASK_PERIOD_MS 2U /* 调度周期，ms；必须换算为至少一个 Tick。 */
+```
+
+底盘vTaskDelayUntil调度周期，经pdMS_TO_TICKS转换；PID使用实际HAL间隔。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis.c](../Core/Src/task/task_chassis/task_chassis.c) 第 16 行。
+
+### CHASSIS_INIT_RETRY_MS（第 15 行定义）
+
+```c
+#define CHASSIS_INIT_RETRY_MS 100U /* 初始化失败重试间隔，ms；避免忙等。 */
+```
+
+初始化/恢复失败节流，比较HAL年龄或转换Tick后等待。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis.c](../Core/Src/task/task_chassis/task_chassis.c) 第 17 行。
+
+### CHASSIS_COMMAND_TIMEOUT_MS（第 18 行定义）
+
+```c
+#define CHASSIS_COMMAND_TIMEOUT_MS 100U /* 命令期限，HAL ms，原接收时间不被转发续期。 */
+```
+
+原始HAL接收时间戳年龄>100ms，底盘回STOP并清键/历史、四轮零电流。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_command.c](../Core/Src/task/task_chassis/task_chassis_command.c) 第 17 行。
+
+### CHASSIS_FEEDBACK_TIMEOUT_MS（第 21 行定义）
+
+```c
+#define CHASSIS_FEEDBACK_TIMEOUT_MS 100U /* 单轮反馈期限，HAL ms；超时只停止该轮。 */
+```
+
+真实反馈HAL年龄>100ms，仅停止该轮并清其PID，发送入口再次复核。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 97 行。
+
+### CHASSIS_CONTROL_GAP_MS（第 24 行定义）
+
+```c
+#define CHASSIS_CONTROL_GAP_MS 100U /* 允许的最大控制间隔，HAL ms，超过后清历史并零输出。 */
+```
+
+HAL实际间隔为0或超过阈值则四轮零并清历史，正常间隔换秒给PID。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 23 行。
+
+### CHASSIS_LOG_PERIOD_MS（第 27 行定义）
+
+```c
+#define CHASSIS_LOG_PERIOD_MS 1000U /* 底盘遥测周期，HAL ms；9600 baud 下建议不小于此值。 */
+```
+
+诊断/提示限频，通常成功提交后续期，不参与电流控制。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 25 行。
+
+### CHASSIS_STICK_DEADBAND_RAW（第 30 行定义）
+
+```c
+#define CHASSIS_STICK_DEADBAND_RAW 30 /* 左摇杆中心死区，raw，[0,660)，越大越不敏感。 */
+```
+
+严格-阈值<raw<阈值归零；外部raw/660×MAX_SPEED_RPM，不扣死区宽度。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 88 行。
+
+### CHASSIS_MAX_SPEED_RPM（第 33 行定义）
+
+```c
+#define CHASSIS_MAX_SPEED_RPM 6000.0f /* 转子目标限速，rpm，>0；不是轮轴 rpm，待整定。 */
+```
+
+三轴与各轮目标限幅，转子rpm；逐轮混控后钳位，不整体归一化。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 83 行。
+
+### CHASSIS_SPEED_KP（第 36 行定义）
+
+```c
+#define CHASSIS_SPEED_KP 4.0f /* 比例增益，raw/rpm，>=0；误差约 1229 rpm 时单 P 饱和。 */
+```
+
+速度P：Kp×(目标rpm−滤波rpm)，输出raw。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 84 行。
+
+### CHASSIS_SPEED_KI（第 39 行定义）
+
+```c
+#define CHASSIS_SPEED_KI 2.0f /* 积分增益，raw/(rpm*s)，>=0；本轮不重新整定。 */
+```
+
+底盘梯形积分增量Ki×(e+e_prev)/2×dt_s/(1+a×abs(e))，单位raw。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 84 行。
+
+### CHASSIS_SPEED_KD（第 42 行定义）
+
+```c
+#define CHASSIS_SPEED_KD 0.0f /* 微分增益，raw*s/rpm，>=0；默认关闭，尚未验证噪声。 */
+```
+
+速度D：Kd×(本误差−上一误差)/dt_s；首帧微分为零。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 84 行。
+
+### CHASSIS_INTEGRAL_LIMIT_RAW（第 45 行定义）
+
+```c
+#define CHASSIS_INTEGRAL_LIMIT_RAW 1000.0f /* 积分项上限，raw，[0,实际限流]，防止历史累加。 */
+```
+
+底盘四个独立速度PID的积分raw限幅；总电流另行限幅。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 85 行。
+
+### CHASSIS_INTEGRAL_ERROR_SCALE（第 48 行定义）
+
+```c
+#define CHASSIS_INTEGRAL_ERROR_SCALE 0.01f /* 变速积分 a，1/rpm，>=0；权重 1/(1+a*abs(e))。 */
+```
+
+变速积分a，1/rpm；权重1/(1+a×abs(e))，0禁用权重。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 86 行。
+
+### CHASSIS_CURRENT_LIMIT_RAW（第 51 行定义）
+
+```c
+#define CHASSIS_CURRENT_LIMIT_RAW 4915.0f /* 实际电流限幅，C620 raw，(0,16384]，约 6 A，待实测。 */
+```
+
+速度PID实际限流±4915 raw约6A；不得超过C620协议±16384 raw。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 87 行。
+
+### CHASSIS_KEYBOARD_T1_MS（第 54 行定义）
+
+```c
+#define CHASSIS_KEYBOARD_T1_MS 200U /* 键盘直线段结束时间，ms，>0；值越大起步越慢。 */
+```
+
+键盘曲线直线段结束时刻ms，届时达到LINEAR_RATIO；配置换算为秒。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 89 行。
+
+### CHASSIS_KEYBOARD_T3_MS（第 57 行定义）
+
+```c
+#define CHASSIS_KEYBOARD_T3_MS 1000U /* 键盘加速完成时间，ms，>T1；反向零速段同样用此时长。 */
+```
+
+曲线达到终点的时刻ms，反向先用同样时长过零；松键立即零目标。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 90 行。
+
+### CHASSIS_KEYBOARD_LINEAR_RATIO（第 60 行定义）
+
+```c
+#define CHASSIS_KEYBOARD_LINEAR_RATIO (1.0f / 3.0f) /* T1 时达到目标的比例，(0,1)，影响起步斜率。 */
+```
+
+T1时的过渡幅度比例(0,1)，改变起步斜率和对数接入修正。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 91 行。
+
+### CHASSIS_KEYBOARD_LOG_SHAPE（第 63 行定义）
+
+```c
+#define CHASSIS_KEYBOARD_LOG_SHAPE 4.0f /* 对数曲线形状系数，>0，无量纲；修改后复核单调性。 */
+```
+
+平滑对数段形状系数>0；两端三次修正保持值与斜率衔接，须复核单调性。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 92 行。
+
+### CHASSIS_ID1_SIGN（第 66 行定义）
+
+```c
+#define CHASSIS_ID1_SIGN (-1) /* CAN1 ID1 右前轮安装方向，±1，同时转换反馈与电流。 */
+```
+
+安装符号±1，同时变换本轮反馈rpm与发送电流；不是两个独立符号。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 16 行。
+
+### CHASSIS_ID2_SIGN（第 69 行定义）
+
+```c
+#define CHASSIS_ID2_SIGN 1 /* CAN1 ID2 左前轮安装方向，±1。 */
+```
+
+安装符号±1，同时变换本轮反馈rpm与发送电流；不是两个独立符号。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 16 行。
+
+### CHASSIS_ID3_SIGN（第 72 行定义）
+
+```c
+#define CHASSIS_ID3_SIGN 1 /* CAN1 ID3 左后轮安装方向，±1。 */
+```
+
+安装符号±1，同时变换本轮反馈rpm与发送电流；不是两个独立符号。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 16 行。
+
+### CHASSIS_ID4_SIGN（第 75 行定义）
+
+```c
+#define CHASSIS_ID4_SIGN (-1) /* CAN1 ID4 右后轮安装方向，±1。 */
+```
+
+安装符号±1，同时变换本轮反馈rpm与发送电流；不是两个独立符号。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_config.h](../Core/Inc/task/task_chassis/task_chassis_config.h)。
+
+Core引用：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 16 行。
+
+## Core/Inc/task/task_chassis/task_chassis_runtime.h
+
+### TASK_CHASSIS_RUNTIME_H（第 9 行定义）
+
+```c
+#define TASK_CHASSIS_RUNTIME_H /* 防止重复包含。 */
+```
+
+包含保护：避免同一翻译单元重复声明，没有控制算法。
+
+源文件：[Core/Inc/task/task_chassis/task_chassis_runtime.h](../Core/Inc/task/task_chassis/task_chassis_runtime.h)。
+
+Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
+
 ## Core/Inc/task/task_dbus/task_dbus.h
 
 ### TASK_DBUS_H（第 16 行定义）
@@ -3174,7 +3619,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus.c](../Core/Src/task/task_dbus/ta
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 60 行。
+Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 61 行。
 
 ### DBUS_TASK_INIT_RETRY_MS（第 16 行定义）
 
@@ -3198,7 +3643,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus.c](../Core/Src/task/task_dbus/ta
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 23 行。
+Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 24 行。
 
 ### DBUS_YAW_CHANNEL（第 18 行定义）
 
@@ -3210,7 +3655,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 25 行。
+Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 26 行。
 
 ### DBUS_PITCH_CHANNEL（第 19 行定义）
 
@@ -3222,7 +3667,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 25 行。
+Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 26 行。
 
 ### DBUS_YAW_INPUT_SIGN（第 20 行定义）
 
@@ -3234,7 +3679,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 27 行。
+Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 28 行。
 
 ### DBUS_PITCH_INPUT_SIGN（第 21 行定义）
 
@@ -3246,7 +3691,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 28 行。
+Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 29 行。
 
 ### DBUS_YAW_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT（第 24 行定义）
 
@@ -3258,7 +3703,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 36 行。
+Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 37 行。
 
 ### DBUS_YAW_MOUSE_VIRTUAL_HOLD_MS（第 27 行定义）
 
@@ -3270,7 +3715,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 63 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 46 行。
+Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 63 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 47 行。
 
 ### DBUS_YAW_MOUSE_VIRTUAL_DECAY_MS（第 30 行定义）
 
@@ -3282,7 +3727,7 @@ Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 62 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 47 行。
+Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 62 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 48 行。
 
 ### DBUS_YAW_MOUSE_VIRTUAL_SIGN（第 33 行定义）
 
@@ -3294,7 +3739,7 @@ Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 58 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 45 行。
+Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 58 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 46 行。
 
 ### DBUS_PITCH_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT（第 37 行定义）
 
@@ -3306,7 +3751,7 @@ Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 37 行。
+Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 38 行。
 
 ### DBUS_PITCH_MOUSE_VIRTUAL_HOLD_MS（第 40 行定义）
 
@@ -3318,7 +3763,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 68 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 51 行。
+Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 68 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 52 行。
 
 ### DBUS_PITCH_MOUSE_VIRTUAL_DECAY_MS（第 43 行定义）
 
@@ -3330,7 +3775,7 @@ Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 67 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 52 行。
+Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 67 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 53 行。
 
 ### DBUS_PITCH_MOUSE_VIRTUAL_SIGN（第 46 行定义）
 
@@ -3342,7 +3787,7 @@ Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 60 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 50 行。
+Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 60 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 51 行。
 
 ### DBUS_MOUSE_VIRTUAL_ENABLE（第 50 行定义）
 
@@ -3354,7 +3799,7 @@ Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 56 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 131 行。
+Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 56 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 132 行。
 
 ### DBUS_MOUSE_VIRTUAL_OUTPUT_LIMIT_PERMILLE（第 53 行定义）
 
@@ -3366,7 +3811,7 @@ Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
-Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 72 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 54 行。
+Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h) 第 72 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 55 行。
 
 ## Core/Inc/task/task_dbus/task_dbus_runtime.h
 
@@ -4919,4 +5364,4 @@ Core引用：[Core/Src/system_stm32f4xx.c](../Core/Src/system_stm32f4xx.c) 第 1
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 32 行。
 
-共覆盖 396 个未注释的宏定义位置。
+共覆盖 432 个未注释的宏定义位置。

@@ -1,6 +1,6 @@
 # yuntai 技术架构与算法说明
 
-> **文档状态**：与源码同步的设计说明，2026-10-07。参数以 `Core/Inc/**/**_config.h` 和 BSP 头文件为准；台架尚未确认的机械量保留“待实测”标记。
+> **文档状态**：与源码同步的设计说明，2026-10-16。参数以 `Core/Inc/**/**_config.h` 和 BSP 头文件为准；底盘任务已由用户通过 CubeMX 创建并链接强入口，实际调度与机械量保留“待实测”标记。
 >
 > **适用范围**：STM32F407、HAL、FreeRTOS、CAN 电机、DJI DBUS、TIM1 PWM 和 USART1 DMA 日志组成的当前 `yuntai` 工程。
 
@@ -11,9 +11,9 @@
 工程的调用方向是：任务组合应用和驱动，应用组合纯算法与驱动；纯算法不依赖 HAL、CAN 或 FreeRTOS。启动层只负责把这些组件按硬件生命周期连接起来：
 
 ```text
-任务适配（DBUS/Yaw/Pitch/Feed 命令、参数和周期）
+任务适配（DBUS/Yaw/Pitch/Feed/Chassis 命令、参数和周期）
       ↓ 调用
-应用控制（GM6020 单轴、级联控制） ─────┐
+应用控制（GM6020 单轴、级联控制、四轮混控） ─┐
       ↓ 调用                           │
 纯算法（PID、Ramp、低通、角度补偿、鼠标虚拟摇杆）
       ↑                                 │
@@ -29,11 +29,12 @@ CubeMX/HAL 外设
 | 层 | 目录 | 作用 | 不负责的内容 |
 |---|---|---|---|
 | 生成入口 | `Core/Src/main.c`、`freertos.c`、`*.ioc` | 初始化外设、创建任务、启动调度器 | 业务控制算法 |
-| CAN BSP | `Core/Src/bsp/can`、`c610_m2006`、`gm6020` | 收发协议、反馈解码、注册表、在线门 | 位置环和机械判定 |
+| CAN BSP | `Core/Src/bsp/can`、`c610_m2006`、`gm6020`、`m3508_c620` | 收发协议、反馈解码、注册表、在线门 | 位置环和机械判定 |
 | 输入 BSP | `Core/Src/bsp/dbus` | USART3 DMA 双缓冲、DBUS 帧校验和快照 | 轴目标计算 |
 | PWM BSP | `Core/Src/bsp/snail_2305` | TIM1 CH1/CH2、C615 脉宽范围和 Ramp | C615 实际转速闭环 |
 | 纯算法 | `Core/Src/algorithm` | 只读数值输入，返回数值输出 | HAL、CAN、FreeRTOS |
 | 云台应用 | `Core/Src/app/gimbal` | GM6020 连续角度、位置/速度环、限位和补偿组合 | 任务创建、DBUS 解析 |
+| 底盘应用 | `Core/Src/app/chassis` | 四轮混控、键盘曲线、四个独立 PID | HAL、DBUS、任务配置与 CAN |
 | 任务 | `Core/Src/task` | 读取命令、取得快照、调用控制器和发送周期输出 | 在 ISR 中做耗时工作 |
 | 日志 | `Core/Src/app/log` | USART1 DMA 单缓冲非阻塞发送 | 控制安全和任务调度 |
 
@@ -47,8 +48,8 @@ CubeMX/HAL 外设
 
 1. `HAL_Init()` 和时钟配置。
 2. 初始化 GPIO、DMA、CAN1、USART1、USART3、TIM1、CAN2。
-3. 配置 CAN2 bank 14 FIFO0 过滤器、启动 CAN2、打开 `CAN_IT_RX_FIFO0_MSG_PENDING`；CAN1 预留底盘，当前只初始化。
-4. `osKernelInitialize()`，由 `MX_FREERTOS_Init()` 创建 DBUS、Yaw、Pitch、供弹任务。
+3. 配置 CAN1 bank0 的 `0x201~0x204` 列表与 CAN2 bank14 的全零掩码，分界值均为 14；启动双 CAN 并打开各自 FIFO0 pending 通知。
+4. `osKernelInitialize()`，由 `MX_FREERTOS_Init()` 创建 DBUS、Yaw、Pitch、供弹和底盘五个任务。用户已通过 CubeMX 新增唯一 `task_chassis`，独立强入口接入 CMake 并覆盖生成弱入口。
 5. `osKernelStart()` 后，业务在任务和 CAN 中断中运行。
 
 正式供弹和 C615 独立 PWM 测试启动时分别初始化所需的驱动；C610 角度步长测试只注册 CAN2 ID1 的 C610/M2006，不启动 C615。任一所需驱动初始化失败，任务保持停止输出并按 `FEED_MOTOR_INIT_RETRY_MS` 重试；不能把“句柄注册成功”当成“电机已经在线”。
@@ -57,14 +58,17 @@ CubeMX/HAL 外设
 
 | 任务 | 默认周期 | 输入 | 输出 | 时间基准 |
 |---|---:|---|---|---|
-| `task_dbus` | 2 ms | USART3 DMA 快照 | Yaw、Pitch、Feed 命令邮箱 | HAL ms + FreeRTOS Tick 调度 |
+| `task_dbus` | 2 ms | USART3 DMA 快照 | Yaw、Pitch、Feed、Chassis 命令邮箱 | HAL ms + FreeRTOS Tick 调度 |
 | `task_feed_motor` | 2 ms | DBUS 左键、C610 反馈 | C615 PWM、M2006 CAN 电流 | HAL ms 检查新鲜度；Tick 计阶段 |
 | `task_yaw` | 2 ms | Yaw 命令、GM6020 反馈 | GM6020 ID1 电流 | HAL ms + 固定配置 `dt_ms=2` |
 | `task_pitch` | 2 ms | Pitch 命令、GM6020 反馈 | GM6020 ID2 电流 | HAL ms + 固定配置 `dt_ms=2` |
+| `task_chassis` | 2 ms | CH2/CH3、键盘、四轮快照 | CAN1 C620 聚合 `0x200` | HAL ms 实际 dt；Tick 调度 |
 | CAN FIFO0 ISR | 事件触发 | CAN 反馈帧 | 驱动反馈结构 | `HAL_GetTick()` 时间戳 |
 | USART1 DMA 完成回调 | 事件触发 | DMA 状态 | 释放日志缓冲区 | ISR，仅做所有权释放 |
 
 `vTaskDelayUntil()` 保持绝对唤醒点。供弹正式运行时通过前后 Tick 差计算实际 `dt_ms`；Yaw/Pitch 的任务入口直接向控制器传入配置周期 2 ms，当前没有测量迟到周期。这两种实现必须区分：云台发生调度超期时，目标积分、积分项和电流 Ramp 仍按 2 ms 计算，需要台架测量执行时间和调度抖动。
+
+底盘从前后 `HAL_GetTick()` 差计算实际 `dt_s`；首周期、dt=0 或超过 100 ms 清历史并发零。入口迟到时重设唤醒锚点，不连续补发过期周期。初始化失败每 100 ms 重试，不阻塞其它任务。
 
 ### 2.3 一次完整数据流
 
@@ -73,15 +77,16 @@ DBUS DMA
   → HAL/USART 回调只记录帧
   → Dbus_Process() 解码并校验
   → Dbus_GetSnapshot()
-  → task_dbus 每 2 ms 发布三份值快照
+  → task_dbus 每 2 ms 从同一输入快照发布四份命令
        ├─ YawCommand_Submit()
        ├─ PitchCommand_Submit()
-       └─ FeedMotorCommand_Submit()
+       ├─ FeedMotorCommand_Submit()
+       └─ ChassisCommand_Submit()（CH2/CH3、键盘、真实接收时刻）
 
 CAN FIFO0 中断
   → can_rx_dispatch.c 取出一帧
-  → Gm6020_HandleRxMessage()
-  → C610_M2006_HandleRxMessage()
+  → CAN1: C620_M3508_HandleRxMessage()
+  → CAN2: Gm6020_HandleRxMessage()/C610_M2006_HandleRxMessage()
   → 更新时间戳、反馈字段和连续角度
 
 供弹任务
@@ -90,6 +95,11 @@ CAN FIFO0 中断
   → 供弹步长状态机 + M2006 固定电流
   → C610_M2006_SetCurrent()/SetOutputEnabled()
   → C610_M2006_SendAll() → CAN 0x200
+
+底盘唯一任务（已由 CubeMX 创建，实际调度待上板）
+  → Ctrl 模式事件 + 命令年龄门 + 各轮反馈门
+  → ChassisControl_Update() 三轴曲线/四轮混控/PID
+  → 安装方向变换 → C620_M3508_SendAll() → CAN1 0x200
 ```
 
 任务只消费值副本。CAN ISR 不打印、不等待、不调用普通 FreeRTOS API；日志也不参与控制决策。
@@ -121,6 +131,7 @@ if (age <= INT32_MAX && age >= timeout_ms) {
 - DBUS 命令邮箱：任务临界区复制 `enabled`、按钮和时间戳的完整结构。
 - C610/GM6020 反馈：ISR 用奇偶 `feedback_sequence` 包住多字段更新，任务通过 `GetFeedback()`/`GetSnapshot()` 重试取得同一帧。
 - C610 聚合发送：读取所有电机槽位、构建 8 字节帧、提交 HAL 邮箱处于同一短临界区；临界区内不等待、不打印。
+- C620：注册、快照、许可/电流和完整聚合提交使用保存/恢复 PRIMASK 的短临界区；不会读取 ISR 更新一半的字段。底盘模式及 PID 仅由底盘任务持有，DBUS 只写命令值副本和 Ctrl 事件计数。
 - 日志 DMA：原子取得唯一缓冲区所有权，DMA 完成回调释放；忙或超长文本直接拒绝，下一周期重试。
 
 ## 4. CAN 协议与角度展开
@@ -651,11 +662,11 @@ CAN1/CAN2 的位时序均为 `Prescaler=3, BS1=10TQ, BS2=3TQ, SJW=1TQ`，每位�
 42 MHz / (3 × 14) = 1 Mbit/s
 ```
 
-CAN2 使用 PB5 RX、PB6 TX，CAN2_RX0 中断优先级 5，承载 Yaw `0x205`、Pitch `0x206` 与供弹 `0x201`。CAN1 使用 PD0 RX、PD1 TX，CAN1_RX0 优先级 5，预留底盘；当前只有外设初始化，尚未启动业务收发。CubeMX 的双 CAN MSP 已保留 CAN1 时钟引用计数，CAN2 工作时必须保持 CAN1 时钟。
+CAN2 使用 PB5 RX、PB6 TX，CAN2_RX0 中断优先级 5，承载 Yaw `0x205`、Pitch `0x206` 与供弹 `0x201`。CAN1 使用 PD0 RX、PD1 TX，CAN1_RX0 优先级 5，已启动并接收底盘 `0x201~0x204`；底盘任务已由 CubeMX 创建，负责周期 `0x200` 输出，实际调度和收发待上板。CubeMX 的双 CAN MSP 已保留 CAN1 时钟引用计数，CAN2 工作时必须保持 CAN1 时钟。
 
-依据 STM32F407 双 bxCAN 共享过滤器和 HAL `HAL_CAN_ConfigFilter()`：`SlaveStartFilterBank=14` 将 bank 0~13 分给 CAN1、14~27 分给 CAN2；云台必须使用 `FilterBank=14`，仅将句柄改为 `hcan2` 而保留 bank 0 会导致 CAN2 无反馈。当前 CAN2 bank 14 为 32 位全零掩码并送 FIFO0，硬件接收所有帧，再由 GM6020/C610 按 CAN 句柄、标准数据帧、长度和 ID 校验；同 ID 的 CAN1 帧不会更新 CAN2 电机。接收回调只读一次 FIFO，任务通过快照读取反馈并使用 HAL 毫秒判断超时；过滤器、启动或通知失败进入 `Error_Handler()`。后续配置底盘过滤器须使用相同分界值和 bank 0~13。
+依据 STM32F407 双 bxCAN 共享过滤器和 HAL `HAL_CAN_ConfigFilter()`：两个 `SlaveStartFilterBank=14` 将 bank 0~13 分给 CAN1、14~27 分给 CAN2；云台使用 bank14 的 32 位全零掩码，送 FIFO0，再由 GM6020/C610 校验。底盘使用 bank0 的 16 位 ID 列表，四字段分别为 `0x201~0x204 << 5`，IDE/RTR 位为零。唯一接收回调只读一次 FIFO，按 hcan1/hcan2 选择驱动，驱动继续校验总线/标准数据帧/DLC/ID；同 ID 的 CAN1 帧不会更新 CAN2 电机。任务使用快照和 HAL 毫秒超时；过滤器、启动或通知失败进入 `Error_Handler()`。两条总线均保持 ABOM；底盘 Bus-Off 恢复不停止/重置 CAN 外设或 CAN2。
 
-HAL 的 1 ms 时间基准来自 TIM7 更新中断并调用 `HAL_IncTick()`；FreeRTOS Tick 另由内核维护。`HAL_GetTick()` 只用于反馈/命令年龄和时间戳，`xTaskGetTickCount()` 只用于调度和供弹阶段。即便两者当前都是 1 kHz，也不能把一个计数器的值直接写进另一个 API。
+HAL 的 1 ms 时间基准来自 TIM7 更新中断并调用 `HAL_IncTick()`；FreeRTOS Tick 另由内核维护。`HAL_GetTick()` 用于反馈/命令年龄、时间戳及底盘实际控制间隔/日志；`xTaskGetTickCount()` 用于调度、供弹阶段和部分现有任务日志。即便两者当前都是 1 kHz，也不能把一个计数器的值直接写进另一个 API。
 
 ### 13.2 UART、DMA 和 GPIO
 
@@ -663,7 +674,7 @@ HAL 的 1 ms 时间基准来自 TIM7 更新中断并调用 `HAL_IncTick()`；Fre
 |---|---|---|---|
 | USART3 RX | PC11，100000 baud，9 bit word + 偶校验，1 stop，RX only | DMA1 Stream1 Channel4，Very High；USART3 IRQ 专用 | DJI DBUS 18 字节帧 |
 | USART3 TX 引脚 | PC10 配置为 AF7，但 USART3 运行模式是 RX；当前不发送 | 同上 | 仅满足 CubeMX 引脚配置，不是日志口 |
-| USART1 TX/RX | PA9/PB7，115200，8N1 | TX DMA2 Stream7 Channel4，Low；USART1 IRQ | 日志 TX（RX 保留） |
+| USART1 TX/RX | PA9/PB7，9600，8N1（保留用户修改） | TX DMA2 Stream7 Channel4，Low；USART1 IRQ | 日志 TX（RX 保留） |
 
 DBUS 的 100000 baud、8 数据位加偶校验在 STM32 HAL 中以 9 bit word 表示；实际有效数据仍是 8 bit，校验位由外设处理。USART3 DMA 使用 M0/M1 两块各 18 字节缓冲，IDLE/错误中断负责同步边界；DMA 完成 ISR 只把已完成块复制到邮箱，不在中断里解包、打印或调用普通 RTOS API。
 
@@ -734,10 +745,13 @@ i_output  = Ramp(i_total, slew_raw_per_s, dt_s)
 | `task_feed_motor` | Normal2 | 1024 words=4096 bytes | 供弹状态机和双 PWM |
 | `task_yaw` | Normal2 | 2048 words=8192 bytes | Yaw 级联控制与日志 |
 | `task_pitch` | Normal2 | 2048 words=8192 bytes | Pitch 级联控制与日志 |
+| `task_chassis` | Normal2/26 | 1024 words=4096 bytes | 唯一底盘任务，As weak/Dynamic/NULL |
 
-四个业务任务合计 28672 字节。`osThreadNew()` 没有传入 `cb_mem`/`stack_mem`，因此这些任务控制块和栈由 CMSIS-RTOS 使用 FreeRTOS 动态堆创建；业务算法内部的静态对象并不意味着任务本身是静态创建。栈溢出和 malloc 失败钩子会记录任务名、剩余堆和高水位后关闭中断死循环，不能把钩子描述成“已自动停电机”。
+原四个业务任务栈合计 28672 字节，加底盘后五个合计32768字节。`osThreadNew()` 没有传入 `cb_mem`/`stack_mem`，因此这些任务控制块和栈由 CMSIS-RTOS 使用 FreeRTOS 动态堆创建；业务算法内部的静态对象并不意味着任务本身是静态创建。栈溢出和 malloc 失败钩子会记录任务名、剩余堆和高水位后关闭中断死循环，不能把钩子描述成“已自动停电机”。
 
-链接脚本的物理区域为 FLASH `0x08000000/1024K`、主 RAM `0x20000000/128K`、CCMRAM `0x10000000/64K`。当前业务数据和 FreeRTOS 堆位于主 RAM；CCMRAM 虽可执行/读写，但 STM32F4 DMA 不能访问，不能把 USART/CAN DMA 缓冲随意放进 `.ccmram`。链接脚本 `_Min_Heap_Size=0x200`、`_Min_Stack_Size=0x400` 只是裸机 heap/主栈保留检查，不等于 FreeRTOS 的 40 KiB heap 或四个任务栈。
+CubeMX 已新增底盘任务，保持现有 40960 bytes 堆。正式 Debug ELF 强入口覆盖已检查；仍需上板验证五次任务创建成功、动态堆最小余量、Idle/Timer/TCB 开销及各栈高水位（words）；链接占用不能证明堆空间足够。具体 GUI 表与强入口覆盖检查见 `CUBEMX_MANUAL_STEPS.md`。
+
+链接脚本的物理区域为 FLASH `0x08000000/1024K`、主 RAM `0x20000000/128K`、CCMRAM `0x10000000/64K`。当前业务数据和 FreeRTOS 堆位于主 RAM；CCMRAM 虽可执行/读写，但 STM32F4 DMA 不能访问，不能把 USART/CAN DMA 缓冲随意放进 `.ccmram`。链接脚本 `_Min_Heap_Size=0x200`、`_Min_Stack_Size=0x400` 只是裸机 heap/主栈保留检查，不等于 FreeRTOS 的 40 KiB heap 或五个任务栈。
 
 ### 13.6 真实调用图
 
@@ -750,6 +764,11 @@ flowchart LR
   T --> Y[YawCommand]
   T --> Q[PitchCommand]
   T --> F[FeedCommand]
+  T --> H[ChassisCommand]
+  C1[CAN1 FIFO0 ISR] --> R[C620 snapshots]
+  H --> HC[task_chassis mode + pure control]
+  R --> HC
+  HC --> HT[CAN1 current aggregate 0x200]
   C[CAN2 FIFO0 ISR] --> G[GM6020/C610 feedback]
   Y --> YA[Yaw GimbalAxis]
   Q --> PA[Pitch GimbalAxis]
@@ -766,3 +785,19 @@ flowchart LR
 ```
 
 图中 ISR 只做搬运、解码和反馈字段更新；PID、Ramp、日志格式化和 CAN 发送均在任务上下文执行。任何新路径若在 ISR 中加入阻塞、浮点控制、日志或普通 FreeRTOS API，都违反这个时序边界。
+
+## 14. CAN1 四轮底盘
+
+`task/task_chassis` 拆为入口、配置、命令和运行时；`app/chassis` 接受值副本输出逻辑控制，`bsp/m3508_c620` 保存真实反馈与聚合发送。底盘不直接读 DBUS；现有 DBUS 任务用同一快照发布 CH2/CH3/keyboard/有效性/接收时间，防止底盘读取消耗云台鼠标增量。
+
+Ctrl 按下沿循环 STOP→STICK→KEYBOARD→STOP，长按只切一次；上电与 DBUS 失效回 STOP，重连先释放再按。两个拨杆无功能。STICK 为 CH2/CH3 平移、Wz=0；KEYBOARD 忽略摇杆，W/S、D/A、E/Q 对应 Vy/Vx/Wz，相反键抵消。右摇杆/鼠标、Shift 的原有控制继续运行。
+
+四轮 ID 顺序为右前、左前、左后、右后，目标分别为 `Vy-Vx-Wz`、`Vy+Vx+Wz`、`Vy-Vx+Wz`、`Vy+Vx-Wz`，逐轮钳位 ±6000 rotor rpm。运行时按 `{-1,+1,+1,-1}` 同时变换反馈和输出；轮序、符号为源工程起点，待本机实测。
+
+键盘三个轴独立使用直线/平滑对数曲线，0.20 s 到 1/3，1.00 s 到终点，形状系数4；公式及边界见 `modules/chassis/README.md`。松键立即清零目标，反向先过零速段。运动模式零速仍速度环制动；STOP 直接零电流。模式切换当周期清历史先交零，下一周期才运行新模式；若零帧未被 HAL 接受则继续阻挡非零。
+
+四个 PID 复用既有 `Pid_Init/Update/Reset`。新增 `Pid_ConfigureIntegral(a,trapezoidal)` 默认关闭；底盘开启 a=0.01 1/rpm 与梯形积分，增量 `Ki*(e+e_prev)/2*dt/(1+a*abs(e))`，首帧 previous=e。梯形抗饱和按增量方向判断，Reset 保留配置。默认矩形/权重1及原乘法顺序保留，云台调用未改变；候选积分仍参与当次输出，只有接受候选才写历史。参数为源普通底盘 Kp4/Ki2/Kd0、积分 ±1000 raw、实际电流 ±4915 raw、目标 ±6000 rpm；单 P 误差约1229 rpm即饱和，稳定性待实测。宏的单位/范围/作用见 `modules/task_chassis/README.md` 配置表及自动宏附录。
+
+命令超过100 ms、dt=0/超过100 ms、Bus-Off 均四轮零并清历史；命令失效额外回 STOP。单轮反馈超过100 ms只停止该轮并清 PID，其余轮继续；恢复轮重新计算。C620 首帧门和发送时新鲜度复核防止输出旧电流。Bus-Off 由已有 ABOM 恢复，退出故障首周期再次清反馈，再等新帧使能，不能重置 CAN2。邮箱忙/HAL失败不等待，记录并下周期交最新帧；HAL提交不是电调执行确认。
+
+底盘日志分类默认关闭，启用还需 `LOG_TASK_ENABLE` 与总门；每1 s复用唯一DMA后端，保留USART1 9600 baud。临时主机正式源码/替身回归114420项通过，默认PID与旧源码逐次一致；Debug及强保留入口/开启日志的链接检查通过。用户已完成CubeMX任务创建，生成后普通Debug构建通过（RAM49800 B、Flash75180 B），入口为强符号T且完整控制路径保留；尚未验证实际调度或上板，链接成功不等于任务已运行。未移植小陀螺、自动正反转、自检、VOFA或参数存储，源工程保持只读。

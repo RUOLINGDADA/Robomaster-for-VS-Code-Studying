@@ -5,7 +5,7 @@
  * PC11/USART3 的 18 字节 DBUS 协议。
  * 仅 DBUS 任务调用。CH0→Yaw、CH1→Pitch；鼠标 X/Y 经虚拟摇杆模块累计为速度。
  * 合成速度限制为 ±1000‰。左键状态由供弹任务判断短按/长按，Shift 独立请求摩擦轮。
- * 三个命令均使用接收帧 HAL ms；重复发布不续期，离线使全部命令失效。
+ * 四个命令均使用接收帧 HAL ms；重复发布不续期，离线使全部命令失效。
  * 本模块只发布命令和限频日志，不写 CAN 电流或 PWM。
  */
 #include "task/task_dbus/task_dbus_runtime.h"
@@ -15,6 +15,7 @@
 #include "task/task_yaw/task_yaw_command.h"
 #include "task/task_pitch/task_pitch_command.h"
 #include "task/task_feed_motor/task_feed_motor_command.h"
+#include "task/task_chassis/task_chassis_command.h"
 #include "app/log/log.h"
 #include <math.h>
 #include "stm32f4xx_hal.h"
@@ -105,14 +106,14 @@ static float DbusTask_Combine(float stick, float mouse) {
 }
 
 /**
- * @brief 处理当前 DBUS 快照并向两轴和供弹发布同源命令（不靠转发旧帧刷新有效期）。
+ * @brief 处理当前 DBUS 快照并向两轴、供弹和底盘发布同源命令。
  * @param now_ms HAL_GetTick 的当前 ms，不能传 FreeRTOS Tick。
  * @retval None 更新命令邮箱与日志时刻。
- * @note 仅 DBUS 任务调用，作为两轴与供弹命令的唯一发布者；UART 忙时不等待。
+ * @note 仅 DBUS 任务调用，作为四个命令的唯一发布者；UART 忙时不等待。
  */
 void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
   /* 先消费 ISR 邮箱并处理 DMA 恢复，再一次取得数据和 online。
-   * 本周期所有输入用同一帧，不能为 Yaw/Pitch/左键分别取快照。（三份命令来自同一张纸条。） */
+   * 本周期所有输入用同一帧，不能为各消费者分别取快照并消费鼠标增量。 */
   Dbus_Process(now_ms);
   Dbus_SnapshotTypeDef input = {0};
   const bool snapshot_ok = Dbus_GetSnapshot(now_ms, &input);
@@ -160,7 +161,7 @@ void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
   (void)PitchCommand_Submit(&pitch);
   /* 左键和 Shift 都发布当前状态；供弹任务以左键按下沿和长按时长决定步长。
    * DJI DBUS keyboard bit4 表示 Shift；左键松开不取消供弹任务中尚未完成的目标。
-   * 三个邮箱分别发布，各消费者只保证自身快照一致；不能宣称三任务同时执行新命令。 */
+   * 四个邮箱分别发布，各消费者只保证自身快照一致；不能宣称四任务同时执行新命令。 */
   const FeedMotor_CommandTypeDef feed = {
     .enabled = available,
     .fire_requested = available && input.data.mouse_left == 1U,
@@ -168,6 +169,16 @@ void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
     .timestamp_ms = input.timestamp_ms,
   };
   (void)FeedMotorCommand_Submit(&feed);
+  /* 底盘复用同一份 DBUS 快照，不能另读驱动快照而消费云台鼠标累计量。
+   * Ctrl 边沿在底盘邮箱捕获；两个拨杆没有功能，CH0/CH1 不分配给底盘。 */
+  const Chassis_CommandTypeDef chassis = {
+    .vx_raw = available ? input.data.channels[2] : 0,
+    .vy_raw = available ? input.data.channels[3] : 0,
+    .keyboard = available ? input.data.keyboard : 0,
+    .enabled = available,
+    .timestamp_ms = input.timestamp_ms,
+  };
+  (void)ChassisCommand_Submit(&chassis);
   /* 合法命令已发布后才尝试遥测。文本和图表共用一次 DMA 提交；忙或过长时下一周期重试。 */
 #if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && (LOG_DBUS_TEXT_ENABLE || LOG_DBUS_CHART_ENABLE)
   if (now_ms - g_last_log_ms >= DBUS_TASK_LOG_PERIOD_MS) {

@@ -24,11 +24,13 @@ typedef enum {
   LOG_CATEGORY_FEED_MOTOR = 1U << 4, /* 供弹正式诊断和初始化提示。 */
   LOG_CATEGORY_YAW_TEST = 1U << 5, /* Yaw 标定和固定目标测试。 */
   LOG_CATEGORY_PITCH_TEST = 1U << 6, /* Pitch 标定和固定目标测试。 */
-  LOG_CATEGORY_FEED_MOTOR_TEST = 1U << 7 /* C610 供弹测试。 */
+  LOG_CATEGORY_FEED_MOTOR_TEST = 1U << 7, /* C610 供弹测试。 */
+  LOG_CATEGORY_CHASSIS = 1U << 8 /* CAN1 底盘正式遥测。 */
 } Log_CategoryTypeDef;
 
 /* 掩码只使用编译期参数。共享测试的运行时分类也经过同一个开关。 */
 #define LOG_ENABLED_CATEGORY_MASK ( \
+    (LOG_TASK_ENABLE && LOG_CHASSIS_ENABLE ? LOG_CATEGORY_CHASSIS : 0U) | \
     (LOG_DBUS_TEXT_ENABLE ? LOG_CATEGORY_DBUS_TEXT : 0U) | \
     (LOG_DBUS_CHART_ENABLE ? LOG_CATEGORY_DBUS_CHART : 0U) | \
     (LOG_TASK_ENABLE && LOG_YAW_ENABLE ? LOG_CATEGORY_YAW : 0U) | \

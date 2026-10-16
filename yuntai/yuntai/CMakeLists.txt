@@ -44,6 +44,11 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    Core/Src/bsp/m3508_c620/m3508_c620.c
+    Core/Src/app/chassis/chassis_control.c
+    Core/Src/task/task_chassis/task_chassis.c
+    Core/Src/task/task_chassis/task_chassis_command.c
+    Core/Src/task/task_chassis/task_chassis_runtime.c
     Core/Src/app/log/log.c
     Core/Src/app/gimbal/gimbal_axis.c
     Core/Src/app/gimbal/gimbal_control.c

@@ -1,6 +1,6 @@
 # 关键实现代码与调用说明
 
-按输入→算法→云台→供弹→日志排列，以下为当前源码原样摘录，不是独立编译的另一套算法。初始化、类型和辅助函数沿源文件链接查阅。重复函数名取最后定义，避开未启用HAL的桩函数。
+按输入→算法/底盘→云台→供弹→日志排列，以下为当前源码原样摘录，不是独立编译的另一套算法。初始化、类型和辅助函数沿源文件链接查阅。重复函数名取最后定义，避开未启用HAL的桩函数。
 
 从工程根运行 powershell -NoProfile -File doc/tools/update_technical_reference.ps1 可重建本文件和宏索引。原理推导和实测状态仍需同步 [技术总文档](TECHNICAL_ARCHITECTURE.md)。
 
@@ -190,7 +190,7 @@ bool Dbus_GetSnapshot(uint32_t now_ms, Dbus_SnapshotTypeDef *snapshot) {
 
 摇杆死区和raw→千分比。
 
-源文件：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c)，定义始于第 84 行。
+源文件：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c)，定义始于第 85 行。
 
 ```c
 static float DbusTask_MapChannel(int16_t channel, int32_t sign) {
@@ -212,14 +212,14 @@ static float DbusTask_MapChannel(int16_t channel, int32_t sign) {
 
 ## DbusTask_RuntimeRunCycle
 
-同一DBUS快照生成三份命令，保留真实时间戳。
+同一DBUS快照生成四份命令，保留真实时间戳，不二次消费鼠标。
 
-源文件：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c)，定义始于第 113 行。
+源文件：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c)，定义始于第 114 行。
 
 ```c
 void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
   /* 先消费 ISR 邮箱并处理 DMA 恢复，再一次取得数据和 online。
-   * 本周期所有输入用同一帧，不能为 Yaw/Pitch/左键分别取快照。（三份命令来自同一张纸条。） */
+   * 本周期所有输入用同一帧，不能为各消费者分别取快照并消费鼠标增量。 */
   Dbus_Process(now_ms);
   Dbus_SnapshotTypeDef input = {0};
   const bool snapshot_ok = Dbus_GetSnapshot(now_ms, &input);
@@ -267,7 +267,7 @@ void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
   (void)PitchCommand_Submit(&pitch);
   /* 左键和 Shift 都发布当前状态；供弹任务以左键按下沿和长按时长决定步长。
    * DJI DBUS keyboard bit4 表示 Shift；左键松开不取消供弹任务中尚未完成的目标。
-   * 三个邮箱分别发布，各消费者只保证自身快照一致；不能宣称三任务同时执行新命令。 */
+   * 四个邮箱分别发布，各消费者只保证自身快照一致；不能宣称四任务同时执行新命令。 */
   const FeedMotor_CommandTypeDef feed = {
     .enabled = available,
     .fire_requested = available && input.data.mouse_left == 1U,
@@ -275,6 +275,16 @@ void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
     .timestamp_ms = input.timestamp_ms,
   };
   (void)FeedMotorCommand_Submit(&feed);
+  /* 底盘复用同一份 DBUS 快照，不能另读驱动快照而消费云台鼠标累计量。
+   * Ctrl 边沿在底盘邮箱捕获；两个拨杆没有功能，CH0/CH1 不分配给底盘。 */
+  const Chassis_CommandTypeDef chassis = {
+    .vx_raw = available ? input.data.channels[2] : 0,
+    .vy_raw = available ? input.data.channels[3] : 0,
+    .keyboard = available ? input.data.keyboard : 0,
+    .enabled = available,
+    .timestamp_ms = input.timestamp_ms,
+  };
+  (void)ChassisCommand_Submit(&chassis);
   /* 合法命令已发布后才尝试遥测。文本和图表共用一次 DMA 提交；忙或过长时下一周期重试。 */
 #if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && (LOG_DBUS_TEXT_ENABLE || LOG_DBUS_CHART_ENABLE)
   if (now_ms - g_last_log_ms >= DBUS_TASK_LOG_PERIOD_MS) {
@@ -427,7 +437,7 @@ bool MouseVirtualJoystick_Update(
 
 候选积分、微分首帧、限幅和抗积分饱和。
 
-源文件：[Core/Src/algorithm/pid/pid.c](../Core/Src/algorithm/pid/pid.c)，定义始于第 82 行。
+源文件：[Core/Src/algorithm/pid/pid.c](../Core/Src/algorithm/pid/pid.c)，定义始于第 97 行。
 
 ```c
 float Pid_Update(Pid_ControllerTypeDef *controller, float error, float dt_s) {
@@ -443,8 +453,17 @@ float Pid_Update(Pid_ControllerTypeDef *controller, float error, float dt_s) {
   /* 微分项看误差变化率；dt_s 必须是真实周期，否则任务抖动会被当成快速运动。 */
   const float derivative = (error - controller->previous_error) / dt_s;
   /* 先计算候选积分，再限幅（避免历史误差超过允许范围）。 */
+  /* 默认分支保持原有乘法顺序，避免底盘扩展改变云台的数值行为。
+   * 梯形积分首帧 previous_error 已设为本帧误差，不能引入假的半幅起步。 */
+  float integral_change = controller->ki * error * dt_s;
+  if (controller->trapezoidal_integral) {
+    integral_change = controller->ki * (0.5f * (error + controller->previous_error) * dt_s);
+  }
+  if (controller->integral_error_scale > 0.0f) {
+    integral_change *= 1.0f / (1.0f + controller->integral_error_scale * fabsf(error));
+  }
   const float next_integral = Pid_Clamp(
-      controller->integral + controller->ki * error * dt_s,
+      controller->integral + integral_change,
       controller->integral_min, controller->integral_max);
   const float unsaturated = controller->kp * error + next_integral +
                             controller->kd * derivative;
@@ -461,13 +480,311 @@ float Pid_Update(Pid_ControllerTypeDef *controller, float error, float dt_s) {
    * 没有饱和时正常保存积分；已经顶到上限时只接受负误差，顶到下限时只接受正误差
    * （通俗理解：只允许积分把输出从“顶住的方向”拉回来，不允许继续往墙上加力）。
    */
+  /* 梯形积分在误差换向首帧可能仍向旧方向增长，按实际积分增量判断抗饱和。
+   * 默认矩形分支仍按原有误差判定，保持云台既有行为。 */
+  const float integral_direction = controller->trapezoidal_integral ? integral_change : error;
   if ((!saturated_high && !saturated_low) ||
-      (saturated_high && error < 0.0f) ||
-      (saturated_low && error > 0.0f)) {
+      (saturated_high && integral_direction < 0.0f) ||
+      (saturated_low && integral_direction > 0.0f)) {
     controller->integral = next_integral;
   }
   controller->previous_error = error;
   return output;
+}
+```
+
+## Pid_ConfigureIntegral
+
+默认关闭的变速/梯形积分配置；Reset保留选项。
+
+源文件：[Core/Src/algorithm/pid/pid.c](../Core/Src/algorithm/pid/pid.c)，定义始于第 63 行。
+
+```c
+bool Pid_ConfigureIntegral(Pid_ControllerTypeDef *controller,
+                           float error_scale, bool trapezoidal) {
+  if (controller == NULL || !isfinite(error_scale) || error_scale < 0.0f) {
+    return false;
+  }
+  controller->integral_error_scale = error_scale;
+  controller->trapezoidal_integral = trapezoidal;
+  Pid_Reset(controller);
+  return true;
+}
+```
+
+## ChassisControl_Profile
+
+源普通底盘的直线和平滑对数曲线。
+
+源文件：[Core/Src/app/chassis/chassis_control.c](../Core/Src/app/chassis/chassis_control.c)，定义始于第 45 行。
+
+```c
+static float ChassisControl_Profile(const ChassisControl_ConfigTypeDef *c, float elapsed_s) {
+  if (elapsed_s <= 0) { return 0; }
+  if (elapsed_s < c->ramp_t1_s) { return c->ramp_linear_ratio * elapsed_s / c->ramp_t1_s; }
+  if (elapsed_s >= c->ramp_t3_s) { return 1; }
+  const float duration = c->ramp_t3_s - c->ramp_t1_s;
+  const float u = (elapsed_s - c->ramp_t1_s) / duration;
+  const float remaining = 1 - u;
+  const float log_scale = log1pf(c->ramp_log_shape);
+  const float start_slope = c->ramp_log_shape / log_scale;
+  const float end_slope = start_slope / (1 + c->ramp_log_shape);
+  const float join_slope = c->ramp_linear_ratio * duration / (c->ramp_t1_s * (1 - c->ramp_linear_ratio));
+  float curve = log1pf(c->ramp_log_shape * u) / log_scale;
+  curve += (join_slope - start_slope) * u * remaining * remaining;
+  curve += end_slope * u * u * remaining;
+  return fminf(1, fmaxf(c->ramp_linear_ratio, c->ramp_linear_ratio + (1 - c->ramp_linear_ratio) * curve));
+}
+```
+
+## ChassisControl_Update
+
+三轴输入、四轮混控和独立PID；不访问HAL。
+
+源文件：[Core/Src/app/chassis/chassis_control.c](../Core/Src/app/chassis/chassis_control.c)，定义始于第 122 行。
+
+```c
+bool ChassisControl_Update(ChassisControl_HandleTypeDef *control, Chassis_ModeTypeDef mode,
+    int16_t vx_raw, int16_t vy_raw, uint16_t keyboard,
+    const ChassisControl_FeedbackTypeDef feedback[CHASSIS_WHEEL_COUNT], float dt_s,
+    ChassisControl_OutputTypeDef *output) {
+  if (output == NULL) { return false; }
+  memset(output, 0, sizeof(*output));
+  if (control == NULL || !control->ready || feedback == NULL || !isfinite(dt_s) || dt_s <= 0 ||
+      mode < CHASSIS_MODE_STOP || mode > CHASSIS_MODE_KEYBOARD) {
+    ChassisControl_Reset(control);
+    return false;
+  }
+  if (mode == CHASSIS_MODE_STOP) { ChassisControl_Reset(control); return true; }
+  const ChassisControl_ConfigTypeDef *c = &control->config;
+  float vx = 0, vy = 0, wz = 0;
+  if (mode == CHASSIS_MODE_STICK) {
+    vx = ChassisControl_Stick(vx_raw, c);
+    vy = ChassisControl_Stick(vy_raw, c);
+  } else {
+    /* DJI bit0/1=W/S，2/3=A/D，6/7=Q/E；Ctrl 由任务模式逻辑独立处理。 */
+    vx = ChassisControl_Ramp(&control->ramp[0], ChassisControl_KeyAxis(keyboard, 3, 2, c->max_speed_rpm), c, dt_s);
+    vy = ChassisControl_Ramp(&control->ramp[1], ChassisControl_KeyAxis(keyboard, 0, 1, c->max_speed_rpm), c, dt_s);
+    wz = ChassisControl_Ramp(&control->ramp[2], ChassisControl_KeyAxis(keyboard, 7, 6, c->max_speed_rpm), c, dt_s);
+  }
+  output->axis_speed_rpm[0] = vx;
+  output->axis_speed_rpm[1] = vy;
+  output->axis_speed_rpm[2] = wz;
+  const float mix[CHASSIS_WHEEL_COUNT] = {vy - vx - wz, vy + vx + wz, vy - vx + wz, vy + vx - wz};
+  for (uint32_t i = 0; i < CHASSIS_WHEEL_COUNT; ++i) {
+    output->target_speed_rpm[i] = ChassisControl_Clamp(mix[i], c->max_speed_rpm);
+    if (!feedback[i].online || !isfinite(feedback[i].speed_rpm)) {
+      Pid_Reset(&control->speed_pid[i]);
+      continue;
+    }
+    const float current = Pid_Update(&control->speed_pid[i], output->target_speed_rpm[i] - feedback[i].speed_rpm, dt_s);
+    if (!isfinite(current)) {
+      Pid_Reset(&control->speed_pid[i]);
+      continue;
+    }
+    output->current_raw[i] = (int16_t)ChassisControl_Clamp(current, c->current_limit_raw);
+  }
+  return true;
+}
+```
+
+## ChassisCommand_Submit
+
+Ctrl按下事件、通信代数与一致值副本。
+
+源文件：[Core/Src/task/task_chassis/task_chassis_command.c](../Core/Src/task/task_chassis/task_chassis_command.c)，定义始于第 26 行。
+
+```c
+bool ChassisCommand_Submit(const Chassis_CommandTypeDef *command) {
+  if (command == NULL) { return false; }
+  const uint32_t mask = __get_PRIMASK();
+  __disable_irq();
+  const uint32_t gap = command->timestamp_ms - g_command.timestamp_ms;
+  const bool interrupted = g_command.enabled && (!command->enabled ||
+      (gap > CHASSIS_COMMAND_TIMEOUT_MS && gap <= INT32_MAX));
+  uint32_t generation = g_command.link_generation;
+  uint32_t presses = g_command.mode_presses;
+  if (interrupted) {
+    ++generation;
+    presses = 0;
+    g_wait_release = true;
+    g_ctrl_down = false;
+  }
+  const bool ctrl = command->enabled && (command->keyboard & (1U << 5U)) != 0U; /* DJI bit5=Ctrl。 */
+  if (!command->enabled) {
+    g_wait_release = true;
+    g_ctrl_down = false;
+  } else {
+    if (!ctrl) { g_wait_release = false; }
+    if (ctrl && !g_ctrl_down && !g_wait_release) { ++presses; }
+    g_ctrl_down = ctrl;
+  }
+  g_command = *command;
+  g_command.mode_presses = presses;
+  g_command.link_generation = generation;
+  g_command.vx_raw = command->enabled ? ChassisCommand_Clamp(command->vx_raw) : 0;
+  g_command.vy_raw = command->enabled ? ChassisCommand_Clamp(command->vy_raw) : 0;
+  if (!command->enabled) { g_command.keyboard = 0; }
+  __set_PRIMASK(mask);
+  return true;
+}
+```
+
+## ChassisCommand_GetSnapshot
+
+原始HAL时间戳超时门，不消费鼠标。
+
+源文件：[Core/Src/task/task_chassis/task_chassis_command.c](../Core/Src/task/task_chassis/task_chassis_command.c)，定义始于第 61 行。
+
+```c
+bool ChassisCommand_GetSnapshot(uint32_t now_ms, Chassis_CommandTypeDef *command) {
+  if (command == NULL) { return false; }
+  const uint32_t mask = __get_PRIMASK();
+  __disable_irq();
+  *command = g_command;
+  __set_PRIMASK(mask);
+  if (command->enabled && now_ms - command->timestamp_ms > INT32_MAX) { now_ms = HAL_GetTick(); }
+  if (!command->enabled || now_ms - command->timestamp_ms > CHASSIS_COMMAND_TIMEOUT_MS) {
+    command->enabled = false;
+    command->vx_raw = 0;
+    command->vy_raw = 0;
+    command->keyboard = 0;
+  }
+  return true;
+}
+```
+
+## ChassisTask_RuntimeRunCycle
+
+唯一底盘任务消费事件、快照、安全门和聚合发送。
+
+源文件：[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c)，定义始于第 114 行。
+
+```c
+void ChassisTask_RuntimeRunCycle(ChassisTask_RuntimeTypeDef *runtime, uint32_t now_ms) {
+  if (runtime == NULL || !runtime->ready) { return; }
+  Chassis_CommandTypeDef command = {0};
+  (void)ChassisCommand_GetSnapshot(now_ms, &command);
+  bool changed = false;
+  if (command.link_generation != runtime->link_generation) {
+    runtime->link_generation = command.link_generation;
+    runtime->last_presses = 0;
+    runtime->mode = CHASSIS_MODE_STOP;
+    changed = true;
+  }
+  if (!command.enabled) {
+    runtime->mode = CHASSIS_MODE_STOP;
+    runtime->last_presses = command.mode_presses;
+  } else {
+    const uint32_t presses = command.mode_presses - runtime->last_presses;
+    if (presses != 0U) {
+      runtime->mode = (Chassis_ModeTypeDef)(((uint32_t)runtime->mode + presses % 3U) % 3U);
+      runtime->last_presses = command.mode_presses;
+      changed = true;
+    }
+  }
+  const bool bus_off = hcan1.Instance == NULL || (hcan1.Instance->ESR & CAN_ESR_BOFF) != 0U;
+  const bool recovering = runtime->was_bus_off && !bus_off;
+  runtime->was_bus_off = bus_off;
+  if (bus_off || recovering) {
+    for (uint32_t i = 0; i < CHASSIS_WHEEL_COUNT; ++i) {
+      C620_M3508_InvalidateFeedback(&runtime->motors[i]);
+    }
+  }
+  ChassisControl_FeedbackTypeDef feedback[CHASSIS_WHEEL_COUNT] = {0};
+  for (uint32_t i = 0; i < CHASSIS_WHEEL_COUNT; ++i) {
+    const bool copied = C620_M3508_GetSnapshot(&runtime->motors[i], &runtime->feedback[i]);
+    const bool online = copied && runtime->feedback[i].online;
+    if (online != runtime->wheel_online[i]) { Pid_Reset(&runtime->control.speed_pid[i]); }
+    runtime->wheel_online[i] = online;
+    feedback[i].online = online;
+    /* 浮点域变换 INT16_MIN，不在 int16_t 内直接取反。 */
+    feedback[i].speed_rpm = online ? (float)runtime->feedback[i].speed_rpm * g_wheel_sign[i] : 0;
+  }
+  const uint32_t elapsed_ms = now_ms - runtime->previous_ms;
+  const bool clock_ok = runtime->clock_valid && elapsed_ms > 0U && elapsed_ms <= CHASSIS_CONTROL_GAP_MS;
+  runtime->previous_ms = now_ms;
+  runtime->clock_valid = true;
+  if (!command.enabled || runtime->mode == CHASSIS_MODE_STOP || changed || !clock_ok ||
+      bus_off || recovering || runtime->zero_pending) {
+    ChassisTask_Stop(runtime);
+    ChassisTask_Log(runtime, now_ms);
+    return;
+  }
+  if (!ChassisControl_Update(&runtime->control, runtime->mode, command.vx_raw, command.vy_raw,
+                             command.keyboard, feedback, elapsed_ms * 0.001f, &runtime->output)) {
+    ChassisTask_Stop(runtime);
+    ChassisTask_Log(runtime, now_ms);
+    return;
+  }
+  for (uint32_t i = 0; i < CHASSIS_WHEEL_COUNT; ++i) {
+    runtime->output_allowed[i] = C620_M3508_SetOutputEnabled(&runtime->motors[i], feedback[i].online) && feedback[i].online;
+    const int16_t raw = runtime->output_allowed[i] ? (int16_t)(runtime->output.current_raw[i] * g_wheel_sign[i]) : 0;
+    (void)C620_M3508_SetCurrent(&runtime->motors[i], raw);
+  }
+  ChassisTask_Send(runtime);
+  ChassisTask_Log(runtime, now_ms);
+}
+```
+
+## C620_M3508_HandleRxMessage
+
+CAN1 C620标准反馈校验和大端解析。
+
+源文件：[Core/Src/bsp/m3508_c620/m3508_c620.c](../Core/Src/bsp/m3508_c620/m3508_c620.c)，定义始于第 142 行。
+
+```c
+bool C620_M3508_HandleRxMessage(CAN_HandleTypeDef *hcan, const CAN_RxHeaderTypeDef *header, const uint8_t *data) {
+  if (hcan == NULL || header == NULL || data == NULL || header->IDE != CAN_ID_STD ||
+      header->RTR != CAN_RTR_DATA || header->DLC != C620_M3508_FRAME_BYTES ||
+      header->StdId <= C620_M3508_FEEDBACK_BASE_ID || header->StdId > C620_M3508_FEEDBACK_BASE_ID + 8U ||
+      C620_M3508_ReadBe(data) > 8191U) { return false; }
+  C620_M3508_HandleTypeDef *motor = C620_M3508_Find(hcan, (uint8_t)(header->StdId - C620_M3508_FEEDBACK_BASE_ID));
+  if (motor == NULL) { return false; }
+  motor->feedback.angle_raw = C620_M3508_ReadBe(data);
+  motor->feedback.speed_rpm = C620_M3508_ReadSignedBe(&data[2]);
+  motor->feedback.current_raw = C620_M3508_ReadSignedBe(&data[4]);
+  motor->feedback.temperature_c = data[6];
+  motor->feedback.status_raw = data[7];
+  motor->feedback.timestamp_ms = HAL_GetTick();
+  motor->feedback.received = true;
+  return true;
+}
+```
+
+## C620_M3508_SendAll
+
+首帧/新鲜度/BOFF复核，临界区构建到HAL提交。
+
+源文件：[Core/Src/bsp/m3508_c620/m3508_c620.c](../Core/Src/bsp/m3508_c620/m3508_c620.c)，定义始于第 169 行。
+
+```c
+bool C620_M3508_SendAll(CAN_HandleTypeDef *hcan) {
+  if (hcan == NULL || hcan->Instance == NULL) { return false; }
+  const uint32_t mask = __get_PRIMASK();
+  __disable_irq();
+  uint8_t data[2][C620_M3508_FRAME_BYTES] = {{0}}; /* 低组和高组负载；未注册槽位必须为零。 */
+  bool used[2] = {false, false};
+  const uint32_t now_ms = HAL_GetTick();
+  const bool bus_ok = (hcan->Instance->ESR & CAN_ESR_BOFF) == 0U;
+  for (uint32_t i = 0; i < C620_M3508_MAX_DEVICES; ++i) {
+    C620_M3508_HandleTypeDef *motor = g_motors[i];
+    if (motor == NULL || motor->config.hcan != hcan) { continue; }
+    if (!bus_ok || !C620_M3508_Fresh(motor, now_ms)) {
+      motor->output_enabled = false;
+      motor->target_current_raw = 0;
+    }
+    const uint32_t group = (motor->config.motor_id - 1U) / 4U;
+    const uint32_t offset = ((motor->config.motor_id - 1U) % 4U) * 2U;
+    const uint16_t raw = (uint16_t)(motor->output_enabled ? motor->target_current_raw : 0);
+    data[group][offset] = (uint8_t)(raw >> 8U);
+    data[group][offset + 1U] = (uint8_t)raw;
+    used[group] = true;
+  }
+  const bool sent = bus_ok && (!used[0] || C620_M3508_SendFrame(hcan, C620_M3508_CONTROL_LOW_ID, data[0])) &&
+                    (!used[1] || C620_M3508_SendFrame(hcan, C620_M3508_CONTROL_HIGH_ID, data[1]));
+  __set_PRIMASK(mask);
+  return sent;
 }
 ```
 

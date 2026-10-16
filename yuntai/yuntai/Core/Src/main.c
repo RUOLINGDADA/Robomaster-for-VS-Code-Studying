@@ -101,7 +101,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   /* STM32F407 双 CAN 共用过滤器：bank 0~13 留给底盘 CAN1，bank 14~27 属于云台 CAN2。
    * 掩码全零会接收所有帧；驱动再校验标准数据帧和 ID。只换 hcan 而保留 bank 0 会让 CAN2 收不到反馈。
-   * CAN1 目前只保留 CubeMX 初始化，底盘接入时再配置其过滤器、启动和接收分发。 */
+   * CAN1 底盘和 CAN2 云台的过滤器分界必须相同，不能复制源底盘的分界值 0。 */
   CAN_FilterTypeDef filter_cfg = {0};
   filter_cfg.FilterBank = 14;
   filter_cfg.FilterMode = CAN_FILTERMODE_IDMASK;
@@ -113,8 +113,24 @@ int main(void)
   filter_cfg.FilterFIFOAssignment = CAN_RX_FIFO0;
   filter_cfg.FilterActivation = ENABLE;
   filter_cfg.SlaveStartFilterBank = 14;
-  if (HAL_CAN_ConfigFilter(&hcan2, &filter_cfg) != HAL_OK ||
-      HAL_CAN_Start(&hcan2) != HAL_OK ||
+  /* bank 0 用 16 位列表精确匹配四个底盘标准数据帧；IDE/RTR 位均为零。
+   * 16 位列表的四个字段均表示 ID，不是掩码；低 5 位是硬件标志，标准 ID 左移 5 位。 */
+  CAN_FilterTypeDef chassis_filter = filter_cfg;
+  chassis_filter.FilterBank = 0;
+  chassis_filter.FilterMode = CAN_FILTERMODE_IDLIST;
+  chassis_filter.FilterScale = CAN_FILTERSCALE_16BIT;
+  chassis_filter.FilterIdHigh = 0x201U << 5U;
+  chassis_filter.FilterIdLow = 0x202U << 5U;
+  chassis_filter.FilterMaskIdHigh = 0x203U << 5U;
+  chassis_filter.FilterMaskIdLow = 0x204U << 5U;
+  /* 两组过滤器先全部配好，再启动双总线，避免配置共享资源时另一条总线已收发。 */
+  if (HAL_CAN_ConfigFilter(&hcan1, &chassis_filter) != HAL_OK ||
+      HAL_CAN_ConfigFilter(&hcan2, &filter_cfg) != HAL_OK ||
+      HAL_CAN_Start(&hcan1) != HAL_OK ||
+      HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
+    Error_Handler();
+  }
+  if (HAL_CAN_Start(&hcan2) != HAL_OK ||
       HAL_CAN_ActivateNotification(&hcan2, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK) {
     /* CAN 初始化失败时保持 Error_Handler 的安全停机，不让任务在未过滤/未启动总线上运行。 */
     Error_Handler();

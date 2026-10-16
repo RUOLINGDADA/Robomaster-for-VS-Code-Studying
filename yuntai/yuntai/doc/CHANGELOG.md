@@ -1,5 +1,21 @@
 # 变更记录
 
+## 2026-10-16（用户已创建底盘任务，完成生成后检查）
+
+- 用户通过 CubeMX 新增唯一 `task_chassis`，`.ioc/freertos.c` 对应 Normal2/26、1024 words/4096 bytes、As weak、Dynamic、NULL；仅有一次 `osThreadNew`，原四任务属性与40960 bytes堆保持。未额外手写任务创建，未更改用户生成配置。
+- 检查双 CAN 过滤器/启动 USER CODE、FIFO0 分发、IRQ、ABOM、独立模块与顶层CMake均保留，USART1仍为9600 baud。同步当前文档的“待创建”状态；下方移植记录保留其当时验证范围。
+- `cmake --preset Debug` 与 `cmake --build --preset Debug` 通过（RAM49800 B，Flash75180 B）；普通Debug不带强保留参数，`nm`确认 `task_chassis_entry` 为强符号T，底盘运行时/控制器已链接。`git diff --check`通过。尚未烧录，不能据此确认任务创建返回非空、实际2 ms调度、动态堆余量、栈高水位或电机方向/闭环稳定性。
+
+## 2026-10-16（CAN1 单任务四轮普通底盘移植）
+
+- 从只读 `MyChassis1-main/MyChassis1-main` 移植四轮普通混控、轮序/方向及三轴键盘曲线，新增 `bsp/m3508_c620`、`app/chassis` 和 `task/task_chassis` 的入口/配置/命令/运行时；只提供一个强任务入口，未手写任务创建。用户仍须按 `CUBEMX_MANUAL_STEPS.md` 在 CubeMX 新建 `task_chassis`：Normal2/26、1024 words、As weak、Dynamic、NULL。现有四任务和40960 bytes堆保持。
+- Ctrl按下沿循环停机→左摇杆CH2/CH3平移→键盘W/S、A/D、Q/E；长按去重，上电/命令掉线回停机，重连先释放。拨杆无功能；右摇杆/鼠标云台、Shift摩擦轮继续原行为。模式切换周期先清历史交零，零帧未接受前阻挡非零。DBUS任务用同一快照发布第四份命令，不另读消耗鼠标增量的快照。
+- CAN1 PD0/PD1、1 Mbit/s，USER CODE配置bank0的四标准ID列表 `0x201~0x204` 并启动；CAN2 bank14保持不变，分界均14。唯一FIFO0回调取一帧后按总线分发，隔离与CAN2供弹相同的0x201/0x200。C620注册/快照/聚合到HAL提交使用短临界区，首帧门与发送新鲜度复核；协议±16384 raw，实际±4915 raw。单轮失效只停该轮；命令>100 ms、dt=0/>100 ms、Bus-Off四轮清零。ABOM恢复等待新反馈，不重置CAN2；邮箱失败不忙等。
+- 扩展既有PID的可选变速/梯形积分，默认关闭，保留旧接口与默认运算次序，Reset保留选项；底盘开启权重 `1/(1+0.01*abs(e_rpm))` 与梯形积分。源参数Kp4/Ki2/Kd0、积分1000 raw、速度6000 rpm、曲线0.2/1.0 s作为待实测起点；纯P约1229 rpm误差饱和。未移植小陀螺、自检、VOFA、源DBUS/PID副本或参数存储。
+- 新增默认关闭的底盘日志，复用唯一DMA后端、1000 ms周期，保留用户USART1 9600 baud及其它既有改动。独立模块和顶层CMake持久化业务；本轮生成文件只改main的USER CODE，未改`.ioc/freertos.c`任务项。同步模块、总架构、参数/已知限制和技术附录。
+- 临时MSVC C11 `/W4 /WX` 编译实际PID/底盘/邮箱/运行时/CAN分发/DBUS适配，114420项检查通过：默认PID与修改前36000次输出/历史对照、积分选项、混控/槽位/方向/曲线、Ctrl/长按/重连/拨杆、单轮失效、命令超时、首帧/帧校验/邮箱失败、BOFF与HAL回绕。HAL/DBUS硬件由替身提供，临时测试验证后删除，不加入固件。
+- Debug配置/构建通过（RAM48800 B，Flash67468 B）；另以日志开关开启且链接器强保留 `task_chassis_entry` 验证完整底盘可链接（RAM50592 B，Flash80256 B，nm为强符号T）。强保留只检验链接，不创建任务。尚未CubeMX生成新任务或烧录；实际调度、动态堆/栈余量、轮序/方向、稳定性、温升和双CAN并行待上板验证。
+
 ## 2026-10-16（云台与供弹迁移到 CAN2，CAN1 预留底盘）
 
 - 保留用户由 CubeMX 生成的双 CAN 配置及已迁移的 `hcan2` 绑定，确认 Yaw `0x205`、Pitch `0x206`、供弹 `0x201` 的正式与硬件测试路径均使用 CAN2。修复 `main.c` USER CODE 中残留的 `FilterBank=0`，改为 CAN2 的 bank 14，`SlaveStartFilterBank=14` 保持不变；bank 0~13 留给 CAN1。此修复避免 CAN2 已启动却无法接收反馈。

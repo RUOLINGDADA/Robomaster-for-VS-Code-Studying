@@ -41,10 +41,11 @@ doc/
 
 ## 当前已实现模块
 
-云台 Yaw/Pitch 与供弹 M2006 统一使用 CAN2（PB5 RX、PB6 TX，1 Mbit/s）；CAN1（PD0 RX、PD1 TX）预留底盘。过滤器分区和重新生成检查见 `TECHNICAL_ARCHITECTURE.md` §13.1 与 `CUBEMX_MANUAL_STEPS.md`。
+云台 Yaw/Pitch 与供弹 M2006 使用 CAN2（PB5 RX、PB6 TX，1 Mbit/s）；四轮 C620/M3508 底盘使用 CAN1（PD0 RX、PD1 TX，1 Mbit/s）。双 CAN 已配置启动；用户已通过 CubeMX 创建唯一 `task_chassis`，正式 Debug ELF 已确认链接独立强入口，实际调度及硬件效果待上板。过滤器分区和任务清单见 `TECHNICAL_ARCHITECTURE.md` §13.1 与 `CUBEMX_MANUAL_STEPS.md`。
 
 当前已实现模块：
 
+- `bsp/m3508_c620`、`app/chassis`、`task/task_chassis`：CAN1 四轮驱动、纯混控/曲线及单任务运行时。Ctrl 循环停机→左摇杆平移→键盘，拨杆无作用；复用 DBUS/PID/日志。见 `doc/modules/m3508_c620/README.md`、`doc/modules/chassis/README.md`、`doc/modules/task_chassis/README.md`。
 - `Core/Inc/app/log/` 与 `Core/Src/app/log/`：独立 Yaw/Pitch/供弹开关、统一日志宏和唯一 USART1 DMA 后端，支持 DBUS 全量/10 通道图表输出；配置和上位机操作见 `doc/modules/log/README.md`。
 - `Core/Inc/bsp/c610_m2006/` 与 `Core/Src/bsp/c610_m2006/`：C610 电调 + M2006 电机 CAN 驱动。接口和协议边界见 `doc/modules/c610_m2006/README.md`。
 - `Core/Inc/bsp/snail_2305/` 与 `Core/Src/bsp/snail_2305/`：C615 + Snail 2305 TIM1 PWM 驱动，接口和安全脉宽见 `doc/modules/snail_2305/README.md`。
@@ -71,6 +72,7 @@ doc/
 ## 参数集中配置
 
 - 鼠标浮点灵敏度、每轴保持与回中：`Core/Inc/task/task_dbus/task_dbus_config.h`；过快时可将增益改为 `0.05f` 或 `0.01f`。
+- 四轮方向、速度 PID、键盘曲线与通信门：`Core/Inc/task/task_chassis/task_chassis_config.h`；源工程参数待本机实测。
 - Yaw/Pitch 标定、PID、Ramp 和重力补偿：对应轴的 `task_*_config.h`。
 - C615 脉宽与 Ramp、C610 角度步长测试及正式供弹：`task_feed_motor_config.h`。角度步长测试宏只用于测试构建，测试完成后必须人工把结果写入正式供弹宏并关闭测试开关。
 - 中文受控注释、配置归属和技能使用规则：`AGENTS.md` 与 `doc/CODING_STYLE.md`。

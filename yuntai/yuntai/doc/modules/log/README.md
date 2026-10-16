@@ -1,7 +1,7 @@
 # USART1 日志与遥控器图表遥测
 
 日志配置入口是 `Core/Inc/app/log/log_config.h`。改宏后重新编译和烧录。
-USART1 使用 `.ioc` 中已有的 115200 baud、8N1、TX DMA。USART3 继续接收 DBUS。
+USART1 保留用户当前 `.ioc` 的 9600 baud、8N1、TX DMA。USART3 继续接收 DBUS。
 统一接口位于 `Core/Inc/app/log/log.h`，唯一格式化和 DMA 后端位于 `Core/Src/app/log/log.c`。
 不新增任务、队列、RTOS 内存或 UART 外设。
 
@@ -11,12 +11,13 @@ USART1 使用 `.ioc` 中已有的 115200 baud、8N1、TX DMA。USART3 继续接�
 | --- | --- | --- |
 | `LOG_GLOBAL_ENABLE` | 1 | 工程业务日志总门 |
 | `LOG_USART1_ENABLE` | 1 | USART1 日志输出总门 |
-| `LOG_DBUS_TEXT_ENABLE` | 1 | 完整遥控数据与接收状态文本 |
-| `LOG_DBUS_CHART_ENABLE` | 1 | 遥控器 10 通道数值帧 |
-| `LOG_YAW_ENABLE` | 1 | Yaw 初始化、正式诊断、标定和固定目标测试 |
-| `LOG_PITCH_ENABLE` | 1 | Pitch 初始化、正式诊断、标定和固定目标测试 |
+| `LOG_DBUS_TEXT_ENABLE` | 0 | 完整遥控数据与接收状态文本 |
+| `LOG_DBUS_CHART_ENABLE` | 0 | 遥控器 10 通道数值帧 |
+| `LOG_YAW_ENABLE` | 0 | Yaw 初始化、正式诊断、标定和固定目标测试 |
+| `LOG_PITCH_ENABLE` | 0 | Pitch 初始化、正式诊断、标定和固定目标测试 |
 | `LOG_FEED_MOTOR_ENABLE` | 1 | 供弹初始化、正式诊断和 C610 角度步长测试 |
-| `LOG_TASK_ENABLE` | 1 | 三个电机正式日志总门，仍须开启对应电机开关 |
+| `LOG_CHASSIS_ENABLE` | 0 | CAN1 底盘正式遥测，仍须开启 TASK 与总门 |
+| `LOG_TASK_ENABLE` | 0 | 各电机正式日志总门，仍须开启对应电机开关 |
 | `LOG_TEST_ENABLE` | 1 | 硬件测试日志总门，仍须开启对应电机开关 |
 | `LOG_CHART_PREFIX` | `"ch:"` | 图表解析前缀，1~16 字节，不含逗号、换行或 printf 占位符 |
 
@@ -32,6 +33,7 @@ if (LOG_TRY_PRINTF(LOG_CATEGORY_FEED_MOTOR, "[供弹] 电流=%d\r\n", current_ra
 ```
 
 正式分类为 `LOG_CATEGORY_YAW/PITCH/FEED_MOTOR`，对应测试分类增加 `_TEST` 后缀。
+底盘增加 `LOG_CATEGORY_CHASSIS`，默认关闭，1000 HAL ms 周期。启用后记录模式、各轮在线/许可、反馈年龄、目标rpm、计算电流raw、HAL已提交、零帧待交、BOFF和失败累计；直接复用同一DMA后端，不增加日志任务或缓冲区。
 共用 GM6020 标定和固定目标测试由各轴任务填写 `test.log_category`，不通过中文名称判断轴；零值不输出。
 云台诊断只共享 `gimbal_log.h` 的格式和快照参数，任务与测试直接调用统一日志宏。
 DBUS 按文本/图表开关拼接内容，用 `LOG_CATEGORY_DBUS_TELEMETRY` 合并为一次 DMA 提交。
@@ -73,7 +75,7 @@ W、S、A、D、Shift、Ctrl、Q、E、R、F、G、Z、X、C、V、B。
 数据参考 `C:\Users\zhoujinyuan\Desktop\hehe.html` 的 10.1.2/10.2 节：文本 CSV、`ch:` 前缀、
 逗号分隔、最多 10 通道、单帧数据不超过 200 字符、换行帧尾。附件中的其他产品功能不是本工程需求。
 
-上位机操作：打开 USART1 对应 USB 串口，设 115200/8N1；接收分帧选择换行，图表解析选择
+上位机操作：打开 USART1 对应 USB 串口，设 9600/8N1；接收分帧选择换行，图表解析选择
 文本 CSV，前缀设 `ch:`；按上表命名通道。文本和图表同时开启时，中文任务日志及 `[DBUS]`
 行不是数值帧；若上位机提示无效帧头，可关闭解析错误提示或仅开启图表分类。
 图表模式建议关闭 `LOG_TASK_ENABLE/LOG_TEST_ENABLE/LOG_DBUS_TEXT_ENABLE`，得到纯 `ch:` 数据流。
@@ -87,8 +89,7 @@ W、S、A、D、Shift、Ctrl、Q、E、R、F、G、Z、X、C、V、B。
 发送成功后只有 `log.c` 中的 USART1 完成回调释放缓冲区。无队列、无等待，不保证每个样本必达；繁忙时
 下一 2 ms 调度周期尝试最新快照，采样间隔可能大于 100 ms。不要按固定频率假定丢样不存在。
 
-115200/8N1 的容量为 11520 字节/s。本轮实际任务的极值离线测试包为 454 字节，100 ms 周期占
-4540 字节/s，约 39.4% UART 带宽，单次发送约 39.4 ms。保守按原始字段、32 位计数/年龄和
+当前 9600/8N1 的容量为 960 字节/s。历史实际任务的极值离线测试包为 454 字节，单次发送约473 ms，100 ms周期无法逐包送达；默认关闭DBUS遥测与底盘日志，保持非阻塞拒绝繁忙，不修改用户波特率。保守按原始字段、32 位计数/年龄和
 虚拟值的最大字符宽度估计，组合包小于 500 字节、图表帧小于 70 字节，均小于缓冲区和 200 字符图表限制。
 正式云台/供弹及测试日志另外占用带宽。需要更稳定图表时关闭其他分类，不修改 DBUS 周期或超时。
 

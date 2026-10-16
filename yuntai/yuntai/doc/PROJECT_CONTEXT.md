@@ -11,7 +11,8 @@
 - MCU/芯片：STM32F407，使用 STM32 HAL 和 CMSIS。
 - RTOS：FreeRTOS，工程同时生成了 CMSIS-RTOS V2 适配层。
 - 构建：CMake + Ninja 预设，工程名为 `yuntai`。
-- 总线分工：CAN2（PB5 RX、PB6 TX，1 Mbit/s）承载 Yaw/Pitch GM6020 和供弹 C610/M2006；CAN1（PD0 RX、PD1 TX）预留底盘，目前只初始化，尚未配置过滤器或启动。双 CAN 共享过滤器以 14 分界，云台使用 bank 14；CAN2 依赖 CAN1 时钟。
+- 总线分工：CAN2（PB5 RX、PB6 TX，1 Mbit/s）承载 Yaw/Pitch GM6020 和供弹 C610/M2006；CAN1（PD0 RX、PD1 TX，1 Mbit/s）承载四轮 C620/M3508。双 CAN 已启动，共享过滤器以 14 分界：CAN1 bank0 精确列表 `0x201~0x204`，CAN2 bank14 保持全零掩码；CAN2 依赖 CAN1 时钟。
+- 底盘代码已接入顶层 CMake；用户已通过 CubeMX 创建唯一 `task_chassis`（Normal2/26，1024 words，As weak，Dynamic，NULL），`.ioc/freertos.c` 共五个业务任务。正式 Debug ELF 的 `task_chassis_entry` 为强符号 T，覆盖生成弱入口；无额外手写任务创建。Ctrl 循环 STOP→CH2/CH3 平移→键盘，两个拨杆无功能。实际调度、堆栈余量和硬件待验证；参数见底盘模块 README，USART1 保留用户手改的 9600 baud。
 - 生成代码包含 `main.c`、`freertos.c`、GPIO/CAN/UART 初始化和 FreeRTOS 任务创建；业务强入口通过 CMake 从 `bsp/`、`algorithm/` 和 `task/` 目录接入，`freertos.c` 仅保留弱兜底。
 - 目前应把新增业务代码放入 `Core/Inc`、`Core/Src` 的 `bsp/`、`algorithm/`、`app/<feature>/` 或 `task/<task_name>/` 子目录，并接入 CMake。
 - 当前已接入 `bsp/gm6020` GM6020 驱动、通用 PID/Ramp/低通算法和 `task_yaw` 模块；`.ioc` 已创建 `task_yaw`（云台底盘水平轴，反馈 ID `0x205`）和 `task_pitch`（发射云台纵向轴，反馈 ID `0x206`）。Yaw/Pitch 使用 DBUS 相对速度命令、各轴已有标定和级联闭环。默认运行正式模式；软件边界只过滤继续向外的命令，零速度保持角度，反馈离线归零。当前不含动态堵转或锁存。

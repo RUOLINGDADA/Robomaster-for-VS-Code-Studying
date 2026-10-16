@@ -10,6 +10,7 @@
 #include "algorithm/pid/pid.h"
 
 #include <stddef.h>
+#include <math.h>
 
 /* 限制中间项或最终输出；积分和输出分开限幅，避免历史误差绕过电流安全边界。 */
 static float Pid_Clamp(float value, float minimum, float maximum) {
@@ -53,7 +54,21 @@ void Pid_Init(Pid_ControllerTypeDef *controller,
   controller->output_max = output_max;
   controller->integral_min = integral_min;
   controller->integral_max = integral_max;
+  controller->integral_error_scale = 0.0f;
+  controller->trapezoidal_integral = false;
   Pid_Reset(controller);
+}
+
+/** 配置只由所属任务改变；非法值先拒绝，避免半配置污染积分历史。 */
+bool Pid_ConfigureIntegral(Pid_ControllerTypeDef *controller,
+                           float error_scale, bool trapezoidal) {
+  if (controller == NULL || !isfinite(error_scale) || error_scale < 0.0f) {
+    return false;
+  }
+  controller->integral_error_scale = error_scale;
+  controller->trapezoidal_integral = trapezoidal;
+  Pid_Reset(controller);
+  return true;
 }
 
 /**
@@ -92,8 +107,17 @@ float Pid_Update(Pid_ControllerTypeDef *controller, float error, float dt_s) {
   /* 微分项看误差变化率；dt_s 必须是真实周期，否则任务抖动会被当成快速运动。 */
   const float derivative = (error - controller->previous_error) / dt_s;
   /* 先计算候选积分，再限幅（避免历史误差超过允许范围）。 */
+  /* 默认分支保持原有乘法顺序，避免底盘扩展改变云台的数值行为。
+   * 梯形积分首帧 previous_error 已设为本帧误差，不能引入假的半幅起步。 */
+  float integral_change = controller->ki * error * dt_s;
+  if (controller->trapezoidal_integral) {
+    integral_change = controller->ki * (0.5f * (error + controller->previous_error) * dt_s);
+  }
+  if (controller->integral_error_scale > 0.0f) {
+    integral_change *= 1.0f / (1.0f + controller->integral_error_scale * fabsf(error));
+  }
   const float next_integral = Pid_Clamp(
-      controller->integral + controller->ki * error * dt_s,
+      controller->integral + integral_change,
       controller->integral_min, controller->integral_max);
   const float unsaturated = controller->kp * error + next_integral +
                             controller->kd * derivative;
@@ -110,9 +134,12 @@ float Pid_Update(Pid_ControllerTypeDef *controller, float error, float dt_s) {
    * 没有饱和时正常保存积分；已经顶到上限时只接受负误差，顶到下限时只接受正误差
    * （通俗理解：只允许积分把输出从“顶住的方向”拉回来，不允许继续往墙上加力）。
    */
+  /* 梯形积分在误差换向首帧可能仍向旧方向增长，按实际积分增量判断抗饱和。
+   * 默认矩形分支仍按原有误差判定，保持云台既有行为。 */
+  const float integral_direction = controller->trapezoidal_integral ? integral_change : error;
   if ((!saturated_high && !saturated_low) ||
-      (saturated_high && error < 0.0f) ||
-      (saturated_low && error > 0.0f)) {
+      (saturated_high && integral_direction < 0.0f) ||
+      (saturated_low && integral_direction > 0.0f)) {
     controller->integral = next_integral;
   }
   controller->previous_error = error;

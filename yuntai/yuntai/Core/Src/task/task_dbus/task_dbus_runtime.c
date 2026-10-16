@@ -1,10 +1,10 @@
 /**
  * @file task_dbus_runtime.c
- * @brief DBUS 摇杆、鼠标和左键的任务适配。
+ * @brief DBUS 摇杆、鼠标、左键和 Shift 的任务适配。
  *
  * PC11/USART3 的 18 字节 DBUS 协议。
  * 仅 DBUS 任务调用。CH0→Yaw、CH1→Pitch；鼠标 X/Y 经虚拟摇杆模块累计为速度。
- * 合成速度限制为 ±1000‰。左键按住发布连续发射意图。
+ * 合成速度限制为 ±1000‰。左键状态由供弹任务判断短按/长按，Shift 独立请求摩擦轮。
  * 三个命令均使用接收帧 HAL ms；重复发布不续期，离线使全部命令失效。
  * 本模块只发布命令和限频日志，不写 CAN 电流或 PWM。
  */
@@ -158,11 +158,13 @@ void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
   /* 两轴都用接收时刻；即使本周期没有新帧也不把 now_ms 写入命令（否则断链后旧速度永远不过期）。 */
   (void)YawCommand_Submit(&yaw);
   (void)PitchCommand_Submit(&pitch);
-  /* 左键按住是一份持续请求，不是事件队列；松开或离线会覆盖上一份请求。
+  /* 左键和 Shift 都发布当前状态；供弹任务以左键按下沿和长按时长决定步长。
+   * DJI DBUS keyboard bit4 表示 Shift；左键松开不取消供弹任务中尚未完成的目标。
    * 三个邮箱分别发布，各消费者只保证自身快照一致；不能宣称三任务同时执行新命令。 */
   const FeedMotor_CommandTypeDef feed = {
     .enabled = available,
     .fire_requested = available && input.data.mouse_left == 1U,
+    .fric_requested = available && ((input.data.keyboard & (1U << 4U)) != 0U),
     .timestamp_ms = input.timestamp_ms,
   };
   (void)FeedMotorCommand_Submit(&feed);

@@ -7,7 +7,7 @@
  * 部分初始化失败时保留已注册 CAN 句柄，重试未启动 PWM 并保持停止值。
  * 每周期在短临界区复制首帧标志和反馈；控制和日志共用这一份快照。
  * 命令/反馈年龄使用 HAL ms；阶段使用 FreeRTOS Tick；Ramp 周期换成 ms。
- * 故障立即写停止脉宽。在线释放时摩擦轮 Ramp 停止，M2006 当周期清零。
+ * 故障或 Shift 释放立即写停止脉宽。M2006 松开左键后按当前步长目标独立完成。
  * HAL 接受 CAN 帧不等于电调执行。本模块不检测卡弹或计算实发弹数。
  */
 #include "FreeRTOS.h"
@@ -63,7 +63,7 @@ _Static_assert(FEED_MOTOR_SNAIL_RAMP_TIME_MS > 0U &&
 
 /* 任务私有：分别向已启动的左右通道写停止 CCR，并重置脉宽 Ramp；未启动通道返回失败。
  * 不停止 TIM1 计数，电调仍收到停止 PWM。CCR 预装载最迟下一周期生效，软件调用不证明轮已停。
- * 在线松键由主循环 Ramp 减速；故障路径不等待这段减速。（先取消油门，不等轮子转慢。） */
+ * 松开 Shift 或故障时均绕过 Ramp，当前控制周期取消油门；实际停转仍受惯性影响。 */
 static void FeedMotorRuntime_StopWheels(FeedMotor_RuntimeTypeDef *runtime) {
   (void)Snail2305_Stop(&runtime->left);
   (void)Snail2305_Stop(&runtime->right);
@@ -167,34 +167,27 @@ void FeedMotor_RuntimeRunCycle(FeedMotor_RuntimeTypeDef *runtime, uint32_t now_m
     age_ms = 0U;
   }
   const bool online = valid && age_ms < C610_M2006_FEEDBACK_TIMEOUT_MS;
-  /* 命令许可与反馈新鲜度共同决定输出。首发先在 FRIC_SPINUP 预旋；进入
-   * FEED/FEED_SETTLE 后继续保持两路活动 PWM，避免 C610 上弹时摩擦轮带载起动。
-   * 按钮释放不能中断进行中的单发；连发释放当周期清零 C610，并让 C615 目标转为停止值。 */
+  /* C615 只由 Shift 控制；它与鼠标左键步长完全独立。命令或反馈失效立即停轮。 */
   const bool permitted = command.enabled && online;
-  bool wheels_active = permitted && FeedMotorControl_WheelsActive(&runtime->control);
-  if (runtime->control.phase == FEED_MOTOR_PHASE_CONTINUOUS_FEED &&
-      !command.fire_requested) {
-    wheels_active = false;
-  }
-  if (!permitted) {
+  const bool wheels_active = permitted && command.fric_requested;
+  if (!wheels_active) {
     FeedMotorRuntime_StopWheels(runtime);
   } else {
-    const uint16_t target = wheels_active ? FEED_MOTOR_SNAIL_ACTIVE_PULSE_US :
-        FEED_MOTOR_SNAIL_STOP_PULSE_US;
+    const uint16_t target = FEED_MOTOR_SNAIL_ACTIVE_PULSE_US;
     (void)Snail2305_SetTargetPulse(&runtime->left, target);
     (void)Snail2305_SetTargetPulse(&runtime->right, target);
     (void)Snail2305_Process(&runtime->left, dt_ms);
     (void)Snail2305_Process(&runtime->right, dt_ms);
   }
   /* PWM 到达活动脉宽只表示 CCR 已写入目标，不是 C615 实际转速反馈。 */
-  const bool wheels_ready = runtime->left.pulse_us == FEED_MOTOR_SNAIL_ACTIVE_PULSE_US &&
-      runtime->right.pulse_us == FEED_MOTOR_SNAIL_ACTIVE_PULSE_US;
   const int64_t angle_count = feedback.angle_total_raw * FEED_MOTOR_FEEDBACK_SIGN;
   const int16_t current_raw = FeedMotorControl_Update(&runtime->control, permitted,
-      command.fire_requested, wheels_ready, angle_count, now_tick, dt_ms);
+      command.fire_requested, angle_count, now_tick);
   /* 每周期都更新许可和电流，再提交整组 CAN 槽位；反馈失效或阶段停止仍发零。
-   * 当前电流非零才允许 C610 输出，单发释放后的 FEED 阶段因此仍可继续完成。 */
-  (void)C610_M2006_SetOutputEnabled(&runtime->motor, current_raw != 0);
+   * 当前电流非零才允许 C610 输出，单发释放后的 STEP 阶段因此仍可继续完成。 */
+  const bool output_enabled =
+      C610_M2006_SetOutputEnabled(&runtime->motor, current_raw != 0) && current_raw != 0;
+  (void)output_enabled; /* 日志记录本周期许可设置成功，不能仅用计算电流非零推定许可成功。 */
   (void)C610_M2006_SetCurrent(&runtime->motor, current_raw);
   const bool submitted = C610_M2006_SendAll(&hcan1);
   (void)submitted; /* 关闭日志时仍须提交电流；不能把有硬件副作用的调用放入日志宏。 */
@@ -202,16 +195,17 @@ void FeedMotor_RuntimeRunCycle(FeedMotor_RuntimeTypeDef *runtime, uint32_t now_m
 #if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && LOG_TASK_ENABLE && LOG_FEED_MOTOR_ENABLE
   if ((TickType_t)(now_tick - runtime->last_log_tick) >= pdMS_TO_TICKS(FEED_MOTOR_LOG_PERIOD_MS)) {
     char angle_count_text[FEED_MOTOR_COUNT_TEXT_SIZE];
+    char target_count_text[FEED_MOTOR_COUNT_TEXT_SIZE];
     FeedMotorRuntime_FormatCount(angle_count, angle_count_text);
-    if (LOG_TRY_PRINTF(LOG_CATEGORY_FEED_MOTOR, "[供弹] 阶段=%s 左键=%u DBUS许可=%u 反馈有效=%u 在线=%u 年龄(ms)=%lu 角度=%s 转速(rpm)=%d 计算电流=%d 输出许可=%u CAN提交=%u 左PWM(us)=%u 右PWM(us)=%u 停滞窗口(count)=%u 停滞确认(ms)=%lu\r\n",
+    FeedMotorRuntime_FormatCount(runtime->control.target_count, target_count_text);
+    if (LOG_TRY_PRINTF(LOG_CATEGORY_FEED_MOTOR, "[供弹] 阶段=%s 左键=%u Shift=%u DBUS许可=%u 反馈有效=%u 在线=%u 年龄(ms)=%lu 角度=%s 目标=%s 转速(rpm)=%d 计算电流=%d 输出许可=%u CAN提交=%u 左PWM(us)=%u 右PWM(us)=%u\r\n",
       FeedMotorControl_PhaseName(runtime->control.phase), command.fire_requested ? 1U : 0U,
-      command.enabled ? 1U : 0U, valid ? 1U : 0U, online ? 1U : 0U,
-      (unsigned long)age_ms, angle_count_text,
+      command.fric_requested ? 1U : 0U, command.enabled ? 1U : 0U, valid ? 1U : 0U, online ? 1U : 0U,
+      (unsigned long)age_ms, angle_count_text, target_count_text,
       (int)(feedback.speed_rpm * FEED_MOTOR_FEEDBACK_SIGN), (int)current_raw,
-      current_raw != 0 ? 1U : 0U,
+      output_enabled ? 1U : 0U,
       submitted ? 1U : 0U, (unsigned)runtime->left.pulse_us,
-      (unsigned)runtime->right.pulse_us, (unsigned)FEED_MOTOR_STALL_COUNTS,
-      (unsigned long)runtime->control.stall_elapsed_ms)) {
+      (unsigned)runtime->right.pulse_us)) {
       runtime->last_log_tick = now_tick;
     }
   }

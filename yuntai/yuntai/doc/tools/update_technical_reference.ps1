@@ -37,6 +37,7 @@ function Get-Mechanism([string]$name) {
     'SPEED_KD' { return '速度D：Kd×(本误差−上一误差)/dt_s；首帧微分为零。' }
     'SPEED_INTEGRAL' { return '速度PID积分历史限幅，不能替代补偿合成后的总电流限幅。' }
     'FILTER_ALPHA' { return '一阶低通y←y+alpha×(x−y)；权重越小响应越滞后。' }
+    'FEED_MOTOR_SNAIL_RAMP_TIME_MS' { return '正式C615启动速率=(活动−停止)×1000/RAMP_MS；Shift释放和故障直接停止，不等待Ramp。' }
     'SLEW|RAMP_TIME' { return 'Ramp变化最多rate×dt_s；PWM速率=(活动−停止)×1000/RAMP_MS。' }
     'VELOCITY_FEEDFORWARD' { return '位置外环输出叠加Kff×有效命令rpm；边界向外命令先归零。' }
     'GRAVITY.*BIAS' { return '余弦补偿常值B，模型sign×(B+A×cos(theta))。' }
@@ -49,12 +50,15 @@ function Get-Mechanism([string]$name) {
     'MOUSE.*HOLD' { return '本轴最后非零事件后保持H毫秒，零位移和另一轴输入不续期。' }
     'MOUSE.*DECAY' { return '回中v=v0×(D−(age−H))/D；age≥H+D归零。' }
     'MOUSE.*OUTPUT_LIMIT' { return '虚拟鼠标单独限幅±L‰；摇杆合成后再限幅±1000‰。' }
+    'FEED_MOTOR_CURRENT_SIGN' { return '供弹协议电流=sign(STEP_COUNTS)×FEED_CURRENT_RAW×CURRENT_SIGN；本符号取±1，不能代替步长方向。' }
     'SIGN' { return '方向映射±1；输入、反馈和电流独立。C615只记录方向，不用PWM切换正反转。' }
+    'STEP_COUNTS' { return '每次供弹的电机转子连续count增量；目标加法先检查int64边界，符号决定目标比较和逻辑电流方向；等长位移提供反向反馈兜底。' }
     'STALL_COUNTS' { return '单发停滞窗口：连续角度距最近明显移动位置不超过该count；超过则更新参考位置并清零确认计时。' }
     'STALL_CONFIRM_MS' { return '单发位置停滞连续保持该毫秒数后结束C610上弹并开始发射保持；C615已预旋，不负责卡弹超时保护。' }
     'SINGLE_FIRE_HOLD_MS' { return 'C610上弹停滞确认完成后，保持两路C615活动PWM该毫秒数；计时结束进入等待松键或连发。' }
-    'CONTINUOUS_PRESS_MS' { return '鼠标左键持续该毫秒数后锁存连发意图；当前单发仍必须先完成。' }
-    'FEED_CURRENT_RAW' { return '单发和连发的固定M2006供弹电流raw；由CURRENT_SIGN映射协议方向。' }
+    'STEP_PAUSE_MS' { return '每步到位周期输出零并记录完成Tick；直到Tick差达到pdMS_TO_TICKS(本停顿)且长按达阈值才建立下一目标。' }
+    'CONTINUOUS_PRESS_MS' { return '从左键按下沿计FreeRTOS Tick差；达到后仍需每步到位后的零电流停顿结束才能重复。' }
+    'FEED_CURRENT_RAW' { return 'STEP阶段固定M2006电流幅值raw；乘步长符号和CURRENT_SIGN得到协议电流。' }
     'DEADBAND' { return '摇杆|raw|≤阈值输出0；外部按raw×1000/660缩放，不减死区宽度。' }
     'CHANNEL_CENTER' { return '11位通道解包后减1024，得到有符号摇杆偏移。' }
     'CHANNEL_SPAN' { return '摇杆范围校验±660，raw×1000/660转换为千分比。' }
@@ -177,7 +181,9 @@ $snippets=@(
  @('Core/Src/bsp/c610_m2006/c610_m2006.c','C610_M2006_HandleRxMessage','C610协议解码与连续角度。'),
  @('Core/Src/bsp/c610_m2006/c610_m2006.c','C610_M2006_SendAll','发送前安全门、槽位大端和PRIMASK临界区。'),
  @('Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c','C610_M2006_AngleStep_RunCycle','只读手动测量：首帧基准、连续角度增量、零电流和参数隔离。'),
- @('Core/Src/task/task_feed_motor/task_feed_motor_control.c','FeedMotorControl_Update','单发先预旋、上弹期间持续PWM、停滞确认结束上弹、短按/长按和连发状态机。'),
+ @('Core/Src/task/task_feed_motor/task_feed_motor_control.c','FeedMotorControl_StartStep','连续角度目标加法边界检查；失败清零并停止。'),
+ @('Core/Src/task/task_feed_motor/task_feed_motor_control.c','FeedMotorControl_TargetReached','有符号目标比较与无符号等长位移兜底。'),
+ @('Core/Src/task/task_feed_motor/task_feed_motor_control.c','FeedMotorControl_Update','短按一步、长按步间零电流停顿、双Tick计时及电流方向。'),
  @('Core/Src/task/task_feed_motor/task_feed_motor_runtime.c','FeedMotor_RuntimeRunCycle','实际dt、双PWM、许可和M2006输出。'),
  @('Core/Src/bsp/snail_2305/snail_2305.c','Snail2305_ConfigValid','TIM1时钟、PSC/ARR和脉宽合法性。'),
  @('Core/Src/bsp/snail_2305/snail_2305.c','Snail2305_Process','浮点Ramp转整数CCR；不是实际转速。'),

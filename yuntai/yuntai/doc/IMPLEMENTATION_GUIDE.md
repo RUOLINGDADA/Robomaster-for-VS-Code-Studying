@@ -265,11 +265,13 @@ void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
   /* 两轴都用接收时刻；即使本周期没有新帧也不把 now_ms 写入命令（否则断链后旧速度永远不过期）。 */
   (void)YawCommand_Submit(&yaw);
   (void)PitchCommand_Submit(&pitch);
-  /* 左键按住是一份持续请求，不是事件队列；松开或离线会覆盖上一份请求。
+  /* 左键和 Shift 都发布当前状态；供弹任务以左键按下沿和长按时长决定步长。
+   * DJI DBUS keyboard bit4 表示 Shift；左键松开不取消供弹任务中尚未完成的目标。
    * 三个邮箱分别发布，各消费者只保证自身快照一致；不能宣称三任务同时执行新命令。 */
   const FeedMotor_CommandTypeDef feed = {
     .enabled = available,
     .fire_requested = available && input.data.mouse_left == 1U,
+    .fric_requested = available && ((input.data.keyboard & (1U << 4U)) != 0U),
     .timestamp_ms = input.timestamp_ms,
   };
   (void)FeedMotorCommand_Submit(&feed);
@@ -1088,98 +1090,112 @@ void C610_M2006_AngleStep_RunCycle(
 }
 ```
 
+## FeedMotorControl_StartStep
+
+连续角度目标加法边界检查；失败清零并停止。
+
+源文件：[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c)，定义始于第 52 行。
+
+```c
+static bool FeedMotorControl_StartStep(FeedMotor_ControlTypeDef *control,
+                                       int64_t angle_count) {
+  const int64_t step_count = FEED_MOTOR_STEP_COUNTS;
+  if ((step_count > 0 && angle_count > INT64_MAX - step_count) ||
+      (step_count < 0 && angle_count < INT64_MIN - step_count)) {
+    FeedMotorControl_Stop(control);
+    return false;
+  }
+  control->start_count = angle_count;
+  control->target_count = angle_count + step_count;
+  control->phase = FEED_MOTOR_PHASE_STEP;
+  return true;
+}
+```
+
+## FeedMotorControl_TargetReached
+
+有符号目标比较与无符号等长位移兜底。
+
+源文件：[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c)，定义始于第 31 行。
+
+```c
+static bool FeedMotorControl_TargetReached(const FeedMotor_ControlTypeDef *control,
+                                           int64_t angle_count) {
+  const bool target_reached = FEED_MOTOR_STEP_COUNTS > 0
+      ? angle_count >= control->target_count
+      : angle_count <= control->target_count;
+  const bool distance_reached =
+      FeedMotorControl_Distance(angle_count, control->start_count) >=
+      FeedMotorControl_Distance(control->target_count, control->start_count);
+  return target_reached || distance_reached;
+}
+```
+
 ## FeedMotorControl_Update
 
-单发先预旋、上弹期间持续PWM、停滞确认结束上弹、短按/长按和连发状态机。
+短按一步、长按步间零电流停顿、双Tick计时及电流方向。
 
-源文件：[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c)，定义始于第 136 行。
+源文件：[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c)，定义始于第 74 行。
 
 ```c
 int16_t FeedMotorControl_Update(FeedMotor_ControlTypeDef *control,
-    bool command_enabled, bool button_pressed, bool wheels_ready,
-    int64_t angle_count, TickType_t now_tick, uint32_t dt_ms) {
-  if (control == NULL || dt_ms == 0U || !command_enabled) {
+    bool command_enabled, bool button_pressed, int64_t angle_count,
+    TickType_t now_tick) {
+  /* 先检查安全门，再记录按下沿时刻；不能把按下前的空闲周期计入长按。
+   * 所有阶段使用同源 Tick 差，阈值在比较处从 ms 换算，支持 Tick 回绕和不同内核频率。 */
+  if (control == NULL || !command_enabled) {
     if (control != NULL) {
       FeedMotorControl_Stop(control);
+      control->press_active = button_pressed;
     }
     return 0;
   }
-
   const bool press_rising = button_pressed && !control->press_active;
-  FeedMotorControl_UpdatePress(control, button_pressed, dt_ms);
+  if (press_rising) {
+    control->press_start_tick = now_tick;
+  }
+  control->press_active = button_pressed;
+  const bool long_press = button_pressed &&
+      (TickType_t)(now_tick - control->press_start_tick) >=
+          pdMS_TO_TICKS(FEED_MOTOR_CONTINUOUS_PRESS_MS);
 
-  /* STOP 只接受新的按下沿。释放后的单发在其它阶段继续，不会重新触发。 */
+  if (control->phase == FEED_MOTOR_PHASE_WAIT_NEXT_STEP) {
+    if (!button_pressed) {
+      FeedMotorControl_Stop(control);
+      return 0;
+    }
+    /* 停顿从本步到位计时，不能从按下沿或上一目标建立时计时。
+     * 达到长按阈值也不能跳过零电流阶段，否则目标逐个完成却始终狂转。 */
+    const bool pause_finished =
+        (TickType_t)(now_tick - control->step_finished_tick) >=
+            pdMS_TO_TICKS(FEED_MOTOR_STEP_PAUSE_MS);
+    if (!long_press || !pause_finished ||
+        !FeedMotorControl_StartStep(control, angle_count)) {
+      return 0;
+    }
+  }
   if (control->phase == FEED_MOTOR_PHASE_STOP) {
-    if (press_rising) {
-      control->continuous_requested = false;
-      FeedMotorControl_StartSpinup(control, angle_count);
-    }
-    return 0;
-  }
-
-  /* 单发阶段不因释放中断；长按只锁存请求，不能跳过预旋、上弹和停滞确认。 */
-  if (control->phase == FEED_MOTOR_PHASE_FEED ||
-      control->phase == FEED_MOTOR_PHASE_FEED_SETTLE) {
-    if (FeedMotorControl_PositionStalled(control, angle_count, dt_ms)) {
-      /* 确认完成的同周期停止 C610；C615 已预旋并持续活动，直接开始发射保持。 */
-      control->phase = FEED_MOTOR_PHASE_SINGLE_FIRE;
-      control->phase_start_tick = now_tick;
+    if (!press_rising) {
       return 0;
     }
-    if (control->stall_elapsed_ms == 0U) {
-      control->phase = FEED_MOTOR_PHASE_FEED;
+    if (!FeedMotorControl_StartStep(control, angle_count)) {
+      return 0;
+    }
+  }
+  if (FeedMotorControl_TargetReached(control, angle_count)) {
+    if (button_pressed) {
+      control->phase = FEED_MOTOR_PHASE_WAIT_NEXT_STEP;
+      control->step_finished_tick = now_tick;
     } else {
-      control->phase = FEED_MOTOR_PHASE_FEED_SETTLE;
-    }
-    return (int16_t)(FEED_MOTOR_FEED_CURRENT_RAW * FEED_MOTOR_CURRENT_SIGN);
-  }
-
-  if (control->phase == FEED_MOTOR_PHASE_FRIC_SPINUP) {
-    if (wheels_ready) {
-      /* 两路活动 PWM 已写入才允许上弹；从当前位置重新建立停滞检测基准。 */
-      control->phase = FEED_MOTOR_PHASE_FEED;
-      control->last_position_count = angle_count;
-      control->stall_elapsed_ms = 0U;
-      return (int16_t)(FEED_MOTOR_FEED_CURRENT_RAW * FEED_MOTOR_CURRENT_SIGN);
-    }
-    return 0;
-  }
-
-  if (control->phase == FEED_MOTOR_PHASE_SINGLE_FIRE) {
-    if ((TickType_t)(now_tick - control->phase_start_tick) >=
-        pdMS_TO_TICKS(FEED_MOTOR_SINGLE_FIRE_HOLD_MS)) {
-      if (control->continuous_requested && button_pressed) {
-        control->phase = FEED_MOTOR_PHASE_CONTINUOUS_FEED;
-        return (int16_t)(FEED_MOTOR_FEED_CURRENT_RAW * FEED_MOTOR_CURRENT_SIGN);
-      } else {
-        control->phase = FEED_MOTOR_PHASE_WAIT_RELEASE;
-      }
-    }
-    return 0;
-  }
-
-  if (control->phase == FEED_MOTOR_PHASE_WAIT_RELEASE) {
-    if (control->continuous_requested && button_pressed) {
-      control->phase = FEED_MOTOR_PHASE_CONTINUOUS_FEED;
-      return (int16_t)(FEED_MOTOR_FEED_CURRENT_RAW * FEED_MOTOR_CURRENT_SIGN);
-    }
-    if (!button_pressed) {
       FeedMotorControl_Stop(control);
     }
+    /* 到位周期一律结束并发送零，下一步只能在后续周期等待完整停顿后建立。 */
     return 0;
   }
-
-  /* 连发不调用停滞判定；只要合法左键仍按住，就同时驱动 C610 和 C615。 */
-  if (control->phase == FEED_MOTOR_PHASE_CONTINUOUS_FEED) {
-    if (!button_pressed) {
-      FeedMotorControl_Stop(control);
-      return 0;
-    }
-    return (int16_t)(FEED_MOTOR_FEED_CURRENT_RAW * FEED_MOTOR_CURRENT_SIGN);
-  }
-
-  FeedMotorControl_Stop(control);
-  return 0;
+  /* 步长决定逻辑方向，CURRENT_SIGN 将逻辑方向映射到协议方向。
+   * 忽略步长符号会让负目标始终配正电流，只能依赖位移兜底错误结束。 */
+  return (int16_t)((FEED_MOTOR_STEP_COUNTS > 0 ? 1 : -1) *
+      FEED_MOTOR_FEED_CURRENT_RAW * FEED_MOTOR_CURRENT_SIGN);
 }
 ```
 
@@ -1225,34 +1241,27 @@ void FeedMotor_RuntimeRunCycle(FeedMotor_RuntimeTypeDef *runtime, uint32_t now_m
     age_ms = 0U;
   }
   const bool online = valid && age_ms < C610_M2006_FEEDBACK_TIMEOUT_MS;
-  /* 命令许可与反馈新鲜度共同决定输出。首发先在 FRIC_SPINUP 预旋；进入
-   * FEED/FEED_SETTLE 后继续保持两路活动 PWM，避免 C610 上弹时摩擦轮带载起动。
-   * 按钮释放不能中断进行中的单发；连发释放当周期清零 C610，并让 C615 目标转为停止值。 */
+  /* C615 只由 Shift 控制；它与鼠标左键步长完全独立。命令或反馈失效立即停轮。 */
   const bool permitted = command.enabled && online;
-  bool wheels_active = permitted && FeedMotorControl_WheelsActive(&runtime->control);
-  if (runtime->control.phase == FEED_MOTOR_PHASE_CONTINUOUS_FEED &&
-      !command.fire_requested) {
-    wheels_active = false;
-  }
-  if (!permitted) {
+  const bool wheels_active = permitted && command.fric_requested;
+  if (!wheels_active) {
     FeedMotorRuntime_StopWheels(runtime);
   } else {
-    const uint16_t target = wheels_active ? FEED_MOTOR_SNAIL_ACTIVE_PULSE_US :
-        FEED_MOTOR_SNAIL_STOP_PULSE_US;
+    const uint16_t target = FEED_MOTOR_SNAIL_ACTIVE_PULSE_US;
     (void)Snail2305_SetTargetPulse(&runtime->left, target);
     (void)Snail2305_SetTargetPulse(&runtime->right, target);
     (void)Snail2305_Process(&runtime->left, dt_ms);
     (void)Snail2305_Process(&runtime->right, dt_ms);
   }
   /* PWM 到达活动脉宽只表示 CCR 已写入目标，不是 C615 实际转速反馈。 */
-  const bool wheels_ready = runtime->left.pulse_us == FEED_MOTOR_SNAIL_ACTIVE_PULSE_US &&
-      runtime->right.pulse_us == FEED_MOTOR_SNAIL_ACTIVE_PULSE_US;
   const int64_t angle_count = feedback.angle_total_raw * FEED_MOTOR_FEEDBACK_SIGN;
   const int16_t current_raw = FeedMotorControl_Update(&runtime->control, permitted,
-      command.fire_requested, wheels_ready, angle_count, now_tick, dt_ms);
+      command.fire_requested, angle_count, now_tick);
   /* 每周期都更新许可和电流，再提交整组 CAN 槽位；反馈失效或阶段停止仍发零。
-   * 当前电流非零才允许 C610 输出，单发释放后的 FEED 阶段因此仍可继续完成。 */
-  (void)C610_M2006_SetOutputEnabled(&runtime->motor, current_raw != 0);
+   * 当前电流非零才允许 C610 输出，单发释放后的 STEP 阶段因此仍可继续完成。 */
+  const bool output_enabled =
+      C610_M2006_SetOutputEnabled(&runtime->motor, current_raw != 0) && current_raw != 0;
+  (void)output_enabled; /* 日志记录本周期许可设置成功，不能仅用计算电流非零推定许可成功。 */
   (void)C610_M2006_SetCurrent(&runtime->motor, current_raw);
   const bool submitted = C610_M2006_SendAll(&hcan1);
   (void)submitted; /* 关闭日志时仍须提交电流；不能把有硬件副作用的调用放入日志宏。 */
@@ -1260,16 +1269,17 @@ void FeedMotor_RuntimeRunCycle(FeedMotor_RuntimeTypeDef *runtime, uint32_t now_m
 #if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && LOG_TASK_ENABLE && LOG_FEED_MOTOR_ENABLE
   if ((TickType_t)(now_tick - runtime->last_log_tick) >= pdMS_TO_TICKS(FEED_MOTOR_LOG_PERIOD_MS)) {
     char angle_count_text[FEED_MOTOR_COUNT_TEXT_SIZE];
+    char target_count_text[FEED_MOTOR_COUNT_TEXT_SIZE];
     FeedMotorRuntime_FormatCount(angle_count, angle_count_text);
-    if (LOG_TRY_PRINTF(LOG_CATEGORY_FEED_MOTOR, "[供弹] 阶段=%s 左键=%u DBUS许可=%u 反馈有效=%u 在线=%u 年龄(ms)=%lu 角度=%s 转速(rpm)=%d 计算电流=%d 输出许可=%u CAN提交=%u 左PWM(us)=%u 右PWM(us)=%u 停滞窗口(count)=%u 停滞确认(ms)=%lu\r\n",
+    FeedMotorRuntime_FormatCount(runtime->control.target_count, target_count_text);
+    if (LOG_TRY_PRINTF(LOG_CATEGORY_FEED_MOTOR, "[供弹] 阶段=%s 左键=%u Shift=%u DBUS许可=%u 反馈有效=%u 在线=%u 年龄(ms)=%lu 角度=%s 目标=%s 转速(rpm)=%d 计算电流=%d 输出许可=%u CAN提交=%u 左PWM(us)=%u 右PWM(us)=%u\r\n",
       FeedMotorControl_PhaseName(runtime->control.phase), command.fire_requested ? 1U : 0U,
-      command.enabled ? 1U : 0U, valid ? 1U : 0U, online ? 1U : 0U,
-      (unsigned long)age_ms, angle_count_text,
+      command.fric_requested ? 1U : 0U, command.enabled ? 1U : 0U, valid ? 1U : 0U, online ? 1U : 0U,
+      (unsigned long)age_ms, angle_count_text, target_count_text,
       (int)(feedback.speed_rpm * FEED_MOTOR_FEEDBACK_SIGN), (int)current_raw,
-      current_raw != 0 ? 1U : 0U,
+      output_enabled ? 1U : 0U,
       submitted ? 1U : 0U, (unsigned)runtime->left.pulse_us,
-      (unsigned)runtime->right.pulse_us, (unsigned)FEED_MOTOR_STALL_COUNTS,
-      (unsigned long)runtime->control.stall_elapsed_ms)) {
+      (unsigned)runtime->right.pulse_us)) {
       runtime->last_log_tick = now_tick;
     }
   }

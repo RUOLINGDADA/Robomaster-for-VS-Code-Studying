@@ -258,7 +258,7 @@ Core引用：[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm60
 
 源文件：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h)。
 
-Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 176 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 206 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 118 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 116 行。
+Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 178 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 201 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 118 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 116 行。
 
 ### LOG_TRY_PRINTF（第 48 行定义）
 
@@ -270,7 +270,7 @@ Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/
 
 源文件：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h)。
 
-Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 176 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 206 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 118 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 116 行。
+Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 178 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 201 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 118 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 116 行。
 
 ## Core/Inc/app/log/log_config.h
 
@@ -3412,7 +3412,7 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 ## Core/Inc/task/task_feed_motor/task_feed_motor_config.h
 
-### TASK_FEED_MOTOR_CONFIG_H（第 13 行定义）
+### TASK_FEED_MOTOR_CONFIG_H（第 14 行定义）
 
 ```c
 #define TASK_FEED_MOTOR_CONFIG_H /* 防止重复包含。 */
@@ -3424,7 +3424,7 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
 
-### FEED_MOTOR_TASK_PERIOD_MS（第 17 行定义）
+### FEED_MOTOR_TASK_PERIOD_MS（第 18 行定义）
 
 ```c
 #define FEED_MOTOR_TASK_PERIOD_MS 2U /* 控制周期，ms；修改后检查调度负载。 */
@@ -3436,7 +3436,7 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 72 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 51 行。
 
-### FEED_MOTOR_INIT_RETRY_MS（第 18 行定义）
+### FEED_MOTOR_INIT_RETRY_MS（第 19 行定义）
 
 ```c
 #define FEED_MOTOR_INIT_RETRY_MS 100U /* 初始化重试间隔，ms；避免故障忙等。 */
@@ -3448,7 +3448,7 @@ Core引用：[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 60 行。
 
-### FEED_MOTOR_COMMAND_TIMEOUT_MS（第 19 行定义）
+### FEED_MOTOR_COMMAND_TIMEOUT_MS（第 20 行定义）
 
 ```c
 #define FEED_MOTOR_COMMAND_TIMEOUT_MS 100U /* DBUS 命令期限，HAL ms；过期立即停机。 */
@@ -3460,7 +3460,7 @@ Core引用：[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_command.c](../Core/Src/task/task_feed_motor/task_feed_motor_command.c) 第 61 行。
 
-### FEED_MOTOR_ID（第 20 行定义）
+### FEED_MOTOR_ID（第 21 行定义）
 
 ```c
 #define FEED_MOTOR_ID 1U /* CAN1 C610 ID1；反馈标准帧 0x201，控制标准帧 0x200。 */
@@ -3472,79 +3472,67 @@ CAN路由/槽位；GM6020反馈0x204+ID，C610反馈0x200+ID。
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 51 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 92 行。
 
-### FEED_MOTOR_STALL_COUNTS（第 21 行定义）
+### FEED_MOTOR_STEP_COUNTS（第 23 行定义）
 
 ```c
-#define FEED_MOTOR_STALL_COUNTS 20 /* 停滞位置窗口，电机轴 count；增大可能提前判定转不动。 */
+#define FEED_MOTOR_STEP_COUNTS (4000LL) /* 每次供弹的电机转子连续逻辑 count，非零；用户指定试用值，符号决定目标和逻辑电流方向。 */
 ```
 
-单发停滞窗口：连续角度距最近明显移动位置不超过该count；超过则更新参考位置并清零确认计时。
+每次供弹的电机转子连续count增量；目标加法先检查int64边界，符号决定目标比较和逻辑电流方向；等长位移提供反向反馈兜底。
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
-Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 69 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 17 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 213 行。
+Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 73 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 13 行。
 
-### FEED_MOTOR_STALL_CONFIRM_MS（第 22 行定义）
+### FEED_MOTOR_CONTINUOUS_PRESS_MS（第 25 行定义）
 
 ```c
-#define FEED_MOTOR_STALL_CONFIRM_MS 100U /* 停滞连续确认时间，ms；减少会增加未到位误判。 */
+#define FEED_MOTOR_CONTINUOUS_PRESS_MS 400U /* 长按阈值，ms；短按完成当前步后停止，长按才建立下一步。 */
 ```
 
-单发位置停滞连续保持该毫秒数后结束C610上弹并开始发射保持；C615已预旋，不负责卡弹超时保护。
+从左键按下沿计FreeRTOS Tick差；达到后仍需每步到位后的零电流停顿结束才能重复。
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
-Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 70 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 18 行。
+Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 74 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 14 行。
 
-### FEED_MOTOR_SINGLE_FIRE_HOLD_MS（第 23 行定义）
+### FEED_MOTOR_STEP_PAUSE_MS（第 27 行定义）
 
 ```c
-#define FEED_MOTOR_SINGLE_FIRE_HOLD_MS 150U /* 单发摩擦轮保持时间，ms；过短可能夹弹未出，过长增加空转。 */
+#define FEED_MOTOR_STEP_PAUSE_MS 200U /* 长按每步完成后的零电流停顿，ms，范围 (0,INT32_MAX]；增大会降低重复频率。 */
 ```
 
-C610上弹停滞确认完成后，保持两路C615活动PWM该毫秒数；计时结束进入等待松键或连发。
+每步到位周期输出零并记录完成Tick；直到Tick差达到pdMS_TO_TICKS(本停顿)且长按达阈值才建立下一目标。
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
-Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 71 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 19 行。
+Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 76 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 16 行。
 
-### FEED_MOTOR_CONTINUOUS_PRESS_MS（第 24 行定义）
+### FEED_MOTOR_FEED_CURRENT_RAW（第 29 行定义）
 
 ```c
-#define FEED_MOTOR_CONTINUOUS_PRESS_MS 400U /* 鼠标左键长按阈值，ms；达到后首发完成再进入连发。 */
+#define FEED_MOTOR_FEED_CURRENT_RAW 5000 /* M2006 连续供弹电流，C610 raw；增加会增大力矩和温升。 */
 ```
 
-鼠标左键持续该毫秒数后锁存连发意图；当前单发仍必须先完成。
+STEP阶段固定M2006电流幅值raw；乘步长符号和CURRENT_SIGN得到协议电流。
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
-Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 72 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 20 行。
+Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 78 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 18 行。
 
-### FEED_MOTOR_FEED_CURRENT_RAW（第 25 行定义）
-
-```c
-#define FEED_MOTOR_FEED_CURRENT_RAW 700 /* M2006 连续供弹电流，C610 raw；增加会增大力矩和温升。 */
-```
-
-单发和连发的固定M2006供弹电流raw；由CURRENT_SIGN映射协议方向。
-
-源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
-
-Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 73 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 22 行。
-
-### FEED_MOTOR_MAX_CURRENT_RAW（第 26 行定义）
+### FEED_MOTOR_MAX_CURRENT_RAW（第 30 行定义）
 
 ```c
-#define FEED_MOTOR_MAX_CURRENT_RAW 700 /* C610 电流安全上限，raw，范围 (0,10000]；用于钳位供弹电流。 */
+#define FEED_MOTOR_MAX_CURRENT_RAW 5000 /* C610 电流安全上限，raw，范围 (0,10000]；用于钳位供弹电流。 */
 ```
 
 电流raw：C610协议±10000，GM6020±16384；任务进一步限流或指定测试电流。
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
-Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 74 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 23 行。
+Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 79 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 19 行。
 
-### FEED_MOTOR_FEEDBACK_SIGN（第 27 行定义）
+### FEED_MOTOR_FEEDBACK_SIGN（第 31 行定义）
 
 ```c
 #define FEED_MOTOR_FEEDBACK_SIGN 1 /* 角度/速度反馈到逻辑坐标的符号，±1；待实测。 */
@@ -3554,21 +3542,21 @@ Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/In
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
-Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 192 行。
+Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 81 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 183 行。
 
-### FEED_MOTOR_CURRENT_SIGN（第 28 行定义）
+### FEED_MOTOR_CURRENT_SIGN（第 32 行定义）
 
 ```c
-#define FEED_MOTOR_CURRENT_SIGN 1 /* 逻辑电流到协议电流的符号，±1；与反馈符号分开调。 */
+#define FEED_MOTOR_CURRENT_SIGN 1 /* 逻辑电流到协议电流的符号，±1；最终电流=步长符号×本符号×电流幅值。 */
 ```
 
-方向映射±1；输入、反馈和电流独立。C615只记录方向，不用PWM切换正反转。
+供弹协议电流=sign(STEP_COUNTS)×FEED_CURRENT_RAW×CURRENT_SIGN；本符号取±1，不能代替步长方向。
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
-Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 172 行。
+Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 82 行；[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/Src/task/task_feed_motor/task_feed_motor_control.c) 第 131 行。
 
-### FEED_MOTOR_LOG_PERIOD_MS（第 29 行定义）
+### FEED_MOTOR_LOG_PERIOD_MS（第 33 行定义）
 
 ```c
 #define FEED_MOTOR_LOG_PERIOD_MS 500U /* 诊断间隔，ms；串口繁忙时重试。 */
@@ -3578,9 +3566,9 @@ Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_control.c](../Core/S
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
-Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 203 行。
+Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 196 行。
 
-### FEED_MOTOR_SNAIL_STOP_PULSE_US（第 31 行定义）
+### FEED_MOTOR_SNAIL_STOP_PULSE_US（第 35 行定义）
 
 ```c
 #define FEED_MOTOR_SNAIL_STOP_PULSE_US 1000U /* C615 停止脉宽，us；停转仍异常时先重新校准。 */
@@ -3592,7 +3580,7 @@ C615脉宽us；停止/活动/范围各有独立参数，1MHz时CCR数字等于us
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 58 行。
 
-### FEED_MOTOR_SNAIL_CH1_DIRECTION_SIGN（第 34 行定义）
+### FEED_MOTOR_SNAIL_CH1_DIRECTION_SIGN（第 38 行定义）
 
 ```c
 #define FEED_MOTOR_SNAIL_CH1_DIRECTION_SIGN 1 /* 正式 CH1 期望转向，+1/-1；实际方向由 C615 相线或 Assistant 设置。 */
@@ -3604,7 +3592,7 @@ Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/S
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 54 行。
 
-### FEED_MOTOR_SNAIL_CH2_DIRECTION_SIGN（第 37 行定义）
+### FEED_MOTOR_SNAIL_CH2_DIRECTION_SIGN（第 41 行定义）
 
 ```c
 #define FEED_MOTOR_SNAIL_CH2_DIRECTION_SIGN (-1) /* 正式 CH2 期望转向，+1/-1；实际方向由 C615 相线或 Assistant 设置。 */
@@ -3616,7 +3604,7 @@ Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/S
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 56 行。
 
-### FEED_MOTOR_SNAIL_MAX_PULSE_US（第 40 行定义）
+### FEED_MOTOR_SNAIL_MAX_PULSE_US（第 44 行定义）
 
 ```c
 #define FEED_MOTOR_SNAIL_MAX_PULSE_US 1550U /* C615 正式运行上限，us；沿用整车例程 FRIC_UP=1550。 */
@@ -3628,10 +3616,10 @@ C615脉宽us；停止/活动/范围各有独立参数，1MHz时CCR数字等于us
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 59 行。
 
-### FEED_MOTOR_SNAIL_ACTIVE_PULSE_US（第 43 行定义）
+### FEED_MOTOR_SNAIL_ACTIVE_PULSE_US（第 47 行定义）
 
 ```c
-#define FEED_MOTOR_SNAIL_ACTIVE_PULSE_US 1520U /* C615 正式活动脉宽，us；沿用参考工程 FRIC_DOWN，需实测温升和供弹能力。 */
+#define FEED_MOTOR_SNAIL_ACTIVE_PULSE_US 1400U /* C615 正式活动脉宽，us，范围 (STOP,MAX]；保留当前调参值，需实测带载起转和温升。 */
 ```
 
 C615脉宽us；停止/活动/范围各有独立参数，1MHz时CCR数字等于us。
@@ -3640,19 +3628,19 @@ C615脉宽us；停止/活动/范围各有独立参数，1MHz时CCR数字等于us
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 60 行。
 
-### FEED_MOTOR_SNAIL_RAMP_TIME_MS（第 46 行定义）
+### FEED_MOTOR_SNAIL_RAMP_TIME_MS（第 50 行定义）
 
 ```c
-#define FEED_MOTOR_SNAIL_RAMP_TIME_MS 300U /* C615 加减速时间，ms；过短会增加启动冲击。 */
+#define FEED_MOTOR_SNAIL_RAMP_TIME_MS 10U /* C615 启动 Ramp 时间，ms，须为正；松键停止不等待 Ramp。 */
 ```
 
-Ramp变化最多rate×dt_s；PWM速率=(活动−停止)×1000/RAMP_MS。
+正式C615启动速率=(活动−停止)×1000/RAMP_MS；Shift释放和故障直接停止，不等待Ramp。
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 52 行。
 
-### FEED_MOTOR_ANGLE_STEP_TEST_ENABLE（第 52 行定义）
+### FEED_MOTOR_ANGLE_STEP_TEST_ENABLE（第 56 行定义）
 
 ```c
 #define FEED_MOTOR_ANGLE_STEP_TEST_ENABLE 0 /* C610 手动角度步长测试开关，0/1；开启后只读测量，完成后恢复 0。 */
@@ -3662,9 +3650,9 @@ Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/S
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
-Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 61 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 29 行。
+Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 65 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 29 行。
 
-### FEED_MOTOR_ANGLE_STEP_TEST_FEEDBACK_SIGN（第 55 行定义）
+### FEED_MOTOR_ANGLE_STEP_TEST_FEEDBACK_SIGN（第 59 行定义）
 
 ```c
 #define FEED_MOTOR_ANGLE_STEP_TEST_FEEDBACK_SIGN (-1) /* 测试反馈方向，±1；与正式 FEED_MOTOR_FEEDBACK_SIGN 独立。 */
@@ -3674,9 +3662,9 @@ Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/In
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
-Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 64 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 46 行。
+Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 68 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 46 行。
 
-### FEED_MOTOR_ANGLE_STEP_TEST_LOG_PERIOD_MS（第 58 行定义）
+### FEED_MOTOR_ANGLE_STEP_TEST_LOG_PERIOD_MS（第 62 行定义）
 
 ```c
 #define FEED_MOTOR_ANGLE_STEP_TEST_LOG_PERIOD_MS 100U /* 当前角度日志间隔，ms；成功提交后再计时。 */
@@ -3686,11 +3674,11 @@ Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/In
 
 源文件：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h)。
 
-Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 66 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 47 行。
+Core引用：[Core/Inc/task/task_feed_motor/task_feed_motor_config.h](../Core/Inc/task/task_feed_motor/task_feed_motor_config.h) 第 70 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 47 行。
 
 ## Core/Inc/task/task_feed_motor/task_feed_motor_control.h
 
-### TASK_FEED_MOTOR_CONTROL_H（第 14 行定义）
+### TASK_FEED_MOTOR_CONTROL_H（第 11 行定义）
 
 ```c
 #define TASK_FEED_MOTOR_CONTROL_H /* 防止重复包含。 */
@@ -4931,4 +4919,4 @@ Core引用：[Core/Src/system_stm32f4xx.c](../Core/Src/system_stm32f4xx.c) 第 1
 
 Core引用：[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 32 行。
 
-共覆盖 397 个未注释的宏定义位置。
+共覆盖 396 个未注释的宏定义位置。

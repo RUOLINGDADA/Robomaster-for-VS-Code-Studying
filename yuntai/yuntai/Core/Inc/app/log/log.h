@@ -25,11 +25,20 @@ typedef enum {
   LOG_CATEGORY_YAW_TEST = 1U << 5, /* Yaw 标定和固定目标测试。 */
   LOG_CATEGORY_PITCH_TEST = 1U << 6, /* Pitch 标定和固定目标测试。 */
   LOG_CATEGORY_FEED_MOTOR_TEST = 1U << 7, /* C610 供弹测试。 */
-  LOG_CATEGORY_CHASSIS = 1U << 8 /* CAN1 底盘正式遥测。 */
+  LOG_CATEGORY_CHASSIS = 1U << 8, /* CAN1 底盘正式遥测。 */
+  LOG_CATEGORY_INS = 1U << 9, /* INS 状态、有效性和角度。 */
+  LOG_CATEGORY_INS_MAG_CALIBRATION = 1U << 10, /* MotionCal的未校正芯片磁场Raw帧。 */
+  LOG_CATEGORY_DBUS_TRACE = 1U << 11 /* 逐帧摇杆和命令变化记录。 */
 } Log_CategoryTypeDef;
 
 /* 掩码只使用编译期参数。共享测试的运行时分类也经过同一个开关。 */
+#if LOG_INS_MAG_CALIBRATION_ENABLE
+#define LOG_ENABLED_CATEGORY_MASK LOG_CATEGORY_INS_MAG_CALIBRATION /* 标定独占分类；其他日志暂停，控制和采集继续。 */
+#elif LOG_DBUS_TRACE_ENABLE
+#define LOG_ENABLED_CATEGORY_MASK LOG_CATEGORY_DBUS_TRACE /* 输入采集独占带宽；不影响设备控制。 */
+#else
 #define LOG_ENABLED_CATEGORY_MASK ( \
+    (LOG_INS_ENABLE ? LOG_CATEGORY_INS : 0U) | \
     (LOG_TASK_ENABLE && LOG_CHASSIS_ENABLE ? LOG_CATEGORY_CHASSIS : 0U) | \
     (LOG_DBUS_TEXT_ENABLE ? LOG_CATEGORY_DBUS_TEXT : 0U) | \
     (LOG_DBUS_CHART_ENABLE ? LOG_CATEGORY_DBUS_CHART : 0U) | \
@@ -39,6 +48,7 @@ typedef enum {
     (LOG_TEST_ENABLE && LOG_YAW_ENABLE ? LOG_CATEGORY_YAW_TEST : 0U) | \
     (LOG_TEST_ENABLE && LOG_PITCH_ENABLE ? LOG_CATEGORY_PITCH_TEST : 0U) | \
     (LOG_TEST_ENABLE && LOG_FEED_MOTOR_ENABLE ? LOG_CATEGORY_FEED_MOTOR_TEST : 0U)) /* 分类位，无单位。 */
+#endif
 
 #define LOG_CATEGORY_ENABLED(category) (LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && \
     (((uint32_t)(category) & (uint32_t)LOG_ENABLED_CATEGORY_MASK) != 0U)) /* 查询分类；无格式化或硬件操作。 */

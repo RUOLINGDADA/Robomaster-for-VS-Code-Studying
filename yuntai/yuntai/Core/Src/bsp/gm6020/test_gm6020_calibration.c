@@ -82,9 +82,9 @@ void Gm6020_TestCalibration_Run(
   const uint32_t age_ms = snapshot.feedback_received &&
                               now_ms - snapshot.feedback.last_feedback_tick <= INT32_MAX
                                   ? now_ms - snapshot.feedback.last_feedback_tick : 0U;
-  const bool log_sent = LOG_TRY_PRINTF(test->log_category, "[%s标定] 在线=%u 单圈角度=%u 连续角度=%ld 转速=%d "
+  const bool log_sent = LOG_TRY_PRINTF(test->log_category, "[%s标定] 时间ms=%lu 在线=%u 单圈角度=%u 连续角度=%ld 转速=%d "
                "反馈电流=%d 温度=%u 反馈年龄(ms)=%lu 输出命令=0 CAN提交=%u 配置有效=%u\r\n",
-               test->axis_name, snapshot.online ? 1U : 0U,
+               test->axis_name, (unsigned long)now_ms, snapshot.online ? 1U : 0U,
                snapshot.feedback.angle_raw,
                (long)snapshot.feedback.angle_total_raw,
                snapshot.feedback.speed_rpm, snapshot.feedback.current_raw,

@@ -3,13 +3,14 @@
  * @brief DBUS 摇杆、鼠标、左键和 Shift 的任务适配。
  *
  * PC11/USART3 的 18 字节 DBUS 协议。
- * 仅 DBUS 任务调用。CH0→Yaw、CH1→Pitch；鼠标 X/Y 经虚拟摇杆模块累计为速度。
+ * 仅 DBUS 任务调用。CH0→Yaw、CH1→Pitch；鼠标 X/Y 按接收间隔映射为跟手速度。
  * 合成速度限制为 ±1000‰。左键状态由供弹任务判断短按/长按，Shift 独立请求摩擦轮。
  * 四个命令均使用接收帧 HAL ms；重复发布不续期，离线使全部命令失效。
  * 本模块只发布命令和限频日志，不写 CAN 电流或 PWM。
  */
 #include "task/task_dbus/task_dbus_runtime.h"
 #include "task/task_dbus/task_dbus_config.h"
+#include "task/task_dbus/task_dbus_trace.h"
 #include "bsp/dbus/dbus.h"
 #include "algorithm/mouse_virtual_joystick/mouse_virtual_joystick.h"
 #include "task/task_yaw/task_yaw_command.h"
@@ -18,6 +19,7 @@
 #include "task/task_chassis/task_chassis_command.h"
 #include "app/log/log.h"
 #include <math.h>
+#include <stddef.h>
 #include "stm32f4xx_hal.h"
 
 /* 先在编译期拒绝无意义死区、非摇杆索引和错误方向，防止开机后发布不可解释命令。 */
@@ -29,7 +31,7 @@ _Static_assert((DBUS_YAW_INPUT_SIGN == 1 || DBUS_YAW_INPUT_SIGN == -1) &&
                (DBUS_PITCH_INPUT_SIGN == 1 || DBUS_PITCH_INPUT_SIGN == -1),
                "DBUS input signs must be +1 or -1");
 
-static MouseVirtualJoystick_HandleTypeDef g_mouse_virtual; /* DBUS 任务独占；X/Y 各自累计、保持和回中。 */
+static MouseVirtualJoystick_HandleTypeDef g_mouse_virtual; /* DBUS 任务独占；X/Y 各自测速、缺帧保持和回中。 */
 static bool g_mouse_virtual_ready; /* 配置初始化成功标志；失败不能发布有效鼠标速度。 */
 
 /* 首次任务周期建立算法状态；失败时保持未就绪，下一周期重试并发布零鼠标量。 */
@@ -52,6 +54,7 @@ static void DbusTask_InitMouseVirtual(void) {
           .hold_ms = DBUS_PITCH_MOUSE_VIRTUAL_HOLD_MS,
           .decay_ms = DBUS_PITCH_MOUSE_VIRTUAL_DECAY_MS,
       },
+      .reference_period_ms = DBUS_MOUSE_VIRTUAL_REFERENCE_PERIOD_MS,
       .output_limit_permille = DBUS_MOUSE_VIRTUAL_OUTPUT_LIMIT_PERMILLE,
   };
   g_mouse_virtual_ready = MouseVirtualJoystick_Init(&g_mouse_virtual, &config);
@@ -114,7 +117,8 @@ static float DbusTask_Combine(float stick, float mouse) {
 void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
   /* 先消费 ISR 邮箱并处理 DMA 恢复，再一次取得数据和 online。
    * 本周期所有输入用同一帧，不能为各消费者分别取快照并消费鼠标增量。 */
-  Dbus_Process(now_ms);
+  Dbus_ProcessObserved(now_ms, LOG_CATEGORY_ENABLED(LOG_CATEGORY_DBUS_TRACE)
+      ? DbusTrace_RecordFrame : NULL);
   Dbus_SnapshotTypeDef input = {0};
   const bool snapshot_ok = Dbus_GetSnapshot(now_ms, &input);
   /* DMA 可能在入口取 now_ms 后才完成新帧。只在此竞态重读 HAL 时刻，
@@ -139,7 +143,7 @@ void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
     gimbal_available = false; /* 初始化失败时不能绕过输入算法继续发布两轴有效速度。 */
   }
   /* 摇杆先做死区，再叠加虚拟鼠标速度。虚拟模块用 valid_frames 去重，
-   * 因此任务重复读取同一快照不会重复放大相对位移。 */
+   * 因此任务重复读取同一快照不会重复消费相对位移。 */
   const Yaw_CommandTypeDef yaw = {
       .velocity_permille = gimbal_available ? DbusTask_Combine(
           DbusTask_MapChannel(input.data.channels[DBUS_YAW_CHANNEL], DBUS_YAW_INPUT_SIGN),
@@ -179,6 +183,11 @@ void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
     .timestamp_ms = input.timestamp_ms,
   };
   (void)ChassisCommand_Submit(&chassis);
+  /* 使用已经发布的同周期输入和命令；诊断失败不改控制状态或命令时间戳。 */
+  DbusTrace_RecordCommand(&input, now_ms, virtual_x, virtual_y,
+      yaw.velocity_permille, pitch.velocity_permille, gimbal_available,
+      (uint8_t)g_mouse_virtual.x.state, (uint8_t)g_mouse_virtual.y.state);
+  DbusTrace_Flush(&input, now_ms);
   /* 合法命令已发布后才尝试遥测。文本和图表共用一次 DMA 提交；忙或过长时下一周期重试。 */
 #if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && (LOG_DBUS_TEXT_ENABLE || LOG_DBUS_CHART_ENABLE)
   if (now_ms - g_last_log_ms >= DBUS_TASK_LOG_PERIOD_MS) {

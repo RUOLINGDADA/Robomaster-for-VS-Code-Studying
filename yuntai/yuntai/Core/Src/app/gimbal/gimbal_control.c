@@ -3,7 +3,7 @@
  * @brief 云台角度环、速度 PID、重力补偿与电流 Ramp。
  *
  * 角度使用连续 count，速度使用 rpm，输出使用 GM6020 电流原始值。
- * 每轴由所属任务独占实例。输入反馈必须来自同一份 CAN 快照。
+ * 每轴由所属任务独占实例。机械与惯性反馈分别来自本周期唯一快照。
  * 本模块只计算输出，不发送 CAN，不检查反馈年龄或配置合法性。
  * 运行时先检查安全门；边界只过滤向外命令，反向命令仍可离开边界。
  */
@@ -13,7 +13,7 @@
 #include <math.h>
 #include <stddef.h>
 
-/* 限制目标、积分和合成电流；各项使用调用者指定的单位和范围。 */
+/* 限制人工增量、积分和合成电流；不能用机械范围钳位惯性目标。 */
 static float GimbalControl_Clamp(float value, float minimum, float maximum) {
   if (value < minimum) {
     return minimum;
@@ -33,6 +33,13 @@ static int16_t GimbalControl_ToCurrent(float current_raw) {
     return -32768;
   }
   return (int16_t)current_raw;
+}
+
+/* 长时间累计惯性角可能超过 int32；只饱和诊断值，不能改写浮点控制目标。 */
+static int32_t GimbalControl_ToDiagnosticRaw(float value) {
+  if (value >= 2147483648.0f) { return INT32_MAX; }
+  if (value <= -2147483648.0f) { return INT32_MIN; }
+  return (int32_t)value;
 }
 
 /**
@@ -91,6 +98,21 @@ void GimbalControl_ResetHistory(GimbalControl_HandleTypeDef *controller) {
   LowPassFilter_Reset(&controller->speed_filter, 0.0f);
 }
 
+/* 切换时只重建新参考系下的目标和动态历史，Ramp 保留当前已请求电流。 */
+bool GimbalControl_Reanchor(GimbalControl_HandleTypeDef *controller,
+                            const GimbalControl_FeedbackTypeDef *feedback) {
+  if (controller == NULL || !controller->initialized || feedback == NULL ||
+      !isfinite(feedback->angle_raw) || !isfinite(feedback->speed_rpm)) {
+    return false;
+  }
+  controller->target_angle_raw = feedback->angle_raw;
+  controller->position_integral_rpm = 0.0f;
+  controller->target_speed_rpm = 0.0f;
+  Pid_Reset(&controller->speed_pid);
+  LowPassFilter_Reset(&controller->speed_filter, feedback->speed_rpm);
+  return true;
+}
+
 /**
  * @brief  设置一个固定保持目标，不改变 PID、Ramp 和滤波历史（测试角度环时使用）。
  * @param  controller 已初始化的通用云台控制器（调用者独占）。
@@ -125,11 +147,32 @@ void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
                           const Gimbal_CommandTypeDef *command,
                           float dt_s,
                           GimbalControl_OutputTypeDef *output) {
+  if (feedback == NULL) {
+    if (output != NULL) { *output = (GimbalControl_OutputTypeDef){0}; }
+    return;
+  }
+  const GimbalControl_FeedbackTypeDef observation = {
+      .angle_raw = (float)feedback->angle_total_raw,
+      .speed_rpm = (float)feedback->speed_rpm,
+      .mechanical_angle_raw = feedback->angle_total_raw,
+  };
+  GimbalControl_UpdateFeedback(controller, &observation, command, dt_s, output);
+}
+
+/* 先过滤本次人工增量，再运行同一套 PID；机械范围不得改变已保存的惯性目标。 */
+void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
+                                  const GimbalControl_FeedbackTypeDef *feedback,
+                                  const Gimbal_CommandTypeDef *command,
+                                  float dt_s,
+                                  GimbalControl_OutputTypeDef *output) {
   if (output != NULL) {
     *output = (GimbalControl_OutputTypeDef){0};
   }
   if (controller == NULL || feedback == NULL || command == NULL ||
-      output == NULL || !controller->initialized || !isfinite(dt_s) || dt_s <= 0.0f) {
+      output == NULL || !controller->initialized || !isfinite(dt_s) || dt_s <= 0.0f ||
+      !isfinite(feedback->angle_raw) || !isfinite(feedback->speed_rpm) ||
+      !isfinite(controller->target_angle_raw) || !isfinite(command->velocity_permille) ||
+      command->velocity_permille < -1000.0f || command->velocity_permille > 1000.0f) {
     return;
   }
 
@@ -140,8 +183,8 @@ void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
       ? ((float)command->velocity_permille / 1000.0f) *
             controller->config.max_command_speed_rpm
       : 0.0f;
-  const bool at_min = feedback->angle_total_raw <= controller->config.min_angle_raw;
-  const bool at_max = feedback->angle_total_raw >= controller->config.max_angle_raw;
+  const bool at_min = feedback->mechanical_angle_raw <= controller->config.min_angle_raw;
+  const bool at_max = feedback->mechanical_angle_raw >= controller->config.max_angle_raw;
   const bool remote_command = !command->fixed_target;
   const bool outward_at_min = remote_command && at_min &&
                               requested_command_speed < 0.0f;
@@ -151,23 +194,41 @@ void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
    * 前馈速度，位置误差虽然为零，速度环仍会向挡块输出电流。（边界像红灯，
    * 不能只禁止加速目标，却继续把油门信号送进下一环。） */
   const bool block_outward = outward_at_min || outward_at_max;
-  const float command_speed = block_outward ? 0.0f : requested_command_speed;
+  bool command_limited = block_outward;
+  float command_speed = block_outward ? 0.0f : requested_command_speed;
   const bool at_or_beyond = at_min || at_max;
 
-  /* 只有非零有效输入更新目标。边界钳位也只作用于本次积分；零输入不能改写保存目标。
-   * 越界反馈不触发重定位，向内命令从最后目标连续积分。（松手只停止目标移动。） */
+  /* 只裁剪本次人工增量，不把惯性角与机械 min/max 直接比较。
+   * 在当前姿态附近，用“机械角 + 惯性目标误差”估计候选机械目标；候选已在范围外时，
+   * 只拒绝继续向外的增量，向内增量仍可逐步减小误差。反馈已到边界或越界时，
+   * 向内命令同周期完整接受。零输入完全跳过本段，底座运动不能重定位保持目标。 */
   if (command_speed != 0.0f) {
-    controller->target_angle_raw +=
-        command_speed * ((float)GM6020_ENCODER_COUNTS_PER_REV / 60.0f) * dt_s;
+    const float raw_per_rpm_s = (float)GM6020_ENCODER_COUNTS_PER_REV / 60.0f;
+    float increment_raw = command_speed * raw_per_rpm_s * dt_s;
+    const float requested_increment_raw = increment_raw;
     if (!at_or_beyond) {
-      controller->target_angle_raw = GimbalControl_Clamp(
-          controller->target_angle_raw, (float)controller->config.min_angle_raw,
-          (float)controller->config.max_angle_raw);
+      const float target_error_raw = controller->target_angle_raw - feedback->angle_raw;
+      const float mechanical_target_raw = (float)feedback->mechanical_angle_raw + target_error_raw;
+      if (increment_raw > 0.0f) {
+        increment_raw = fminf(increment_raw,
+            fmaxf(0.0f, (float)controller->config.max_angle_raw - mechanical_target_raw));
+      } else {
+        increment_raw = fmaxf(increment_raw,
+            fminf(0.0f, (float)controller->config.min_angle_raw - mechanical_target_raw));
+      }
     }
+    if (increment_raw != requested_increment_raw) {
+      command_limited = true;
+      command_speed = increment_raw / (raw_per_rpm_s * dt_s);
+    }
+    const float candidate_target = controller->target_angle_raw + increment_raw;
+    if (!isfinite(candidate_target) || !isfinite(command_speed)) { return; }
+    controller->target_angle_raw = candidate_target;
   }
 
   const float angle_error = controller->target_angle_raw -
-                            (float)feedback->angle_total_raw;
+                            feedback->angle_raw;
+  if (!isfinite(angle_error)) { return; }
   const float previous_integral = controller->position_integral_rpm;
   const float integral_candidate = previous_integral +
       controller->config.position_ki_rpm_per_raw_s * angle_error * dt_s;
@@ -202,7 +263,11 @@ void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
   const float speed_loop_current =
       Pid_Update(&controller->speed_pid, speed_error, dt_s);
   const float gravity_current = GravityCompensation_Update(
-      &controller->gravity_compensation, feedback->angle_total_raw);
+      &controller->gravity_compensation, feedback->mechanical_angle_raw);
+  if (!isfinite(speed_loop_current) || !isfinite(gravity_current)) {
+    GimbalControl_ResetHistory(controller);
+    return;
+  }
   const float combined_current = GimbalControl_Clamp(
       speed_loop_current + gravity_current, -controller->config.max_current_raw,
       controller->config.max_current_raw);
@@ -214,8 +279,11 @@ void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
       &controller->current_ramp, combined_current,
       controller->config.current_slew_raw_per_s, dt_s);
 
-  output->target_angle_raw = (int32_t)controller->target_angle_raw;
-  output->angle_error_raw = (int32_t)angle_error;
+  output->target_angle_raw = GimbalControl_ToDiagnosticRaw(controller->target_angle_raw);
+  output->angle_error_raw = GimbalControl_ToDiagnosticRaw(angle_error);
+  output->feedback_angle_raw = feedback->angle_raw;
+  output->feedback_speed_rpm = feedback->speed_rpm;
+  output->accepted_command_speed_rpm = command_speed;
   output->target_speed_rpm = target_speed;
   output->speed_loop_current_raw = GimbalControl_ToCurrent(speed_loop_current);
   output->gravity_compensation_current_raw =
@@ -223,4 +291,6 @@ void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
   output->target_current_raw = GimbalControl_ToCurrent(ramped_current);
   output->at_min_limit = at_min;
   output->at_max_limit = at_max;
+  output->command_limited = command_limited;
+  output->valid = true;
 }

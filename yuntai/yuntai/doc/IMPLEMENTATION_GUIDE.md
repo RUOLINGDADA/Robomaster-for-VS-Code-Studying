@@ -1,14 +1,638 @@
 # 关键实现代码与调用说明
 
-按输入→算法/底盘→云台→供弹→日志排列，以下为当前源码原样摘录，不是独立编译的另一套算法。初始化、类型和辅助函数沿源文件链接查阅。重复函数名取最后定义，避开未启用HAL的桩函数。
+按INS采集/融合→遥控输入→算法/底盘→云台→供弹→日志排列，以下为当前源码原样摘录，不是独立编译的另一套算法。初始化、类型和辅助函数沿源文件链接查阅。重复函数名取最后定义，避开未启用HAL的桩函数。
 
 从工程根运行 powershell -NoProfile -File doc/tools/update_technical_reference.ps1 可重建本文件和宏索引。原理推导和实测状态仍需同步 [技术总文档](TECHNICAL_ARCHITECTURE.md)。
+
+## Bmi088_Init
+
+SPI模式切换、复位、ID与可写位回读。
+
+源文件：[Core/Src/bsp/bmi088/bmi088.c](../Core/Src/bsp/bmi088/bmi088.c)，定义始于第 64 行。
+
+```c
+bool Bmi088_Init(Bmi088_HandleTypeDef *handle, const Bmi088_ConfigTypeDef *config) {
+  if (handle == NULL || config == NULL || config->spi == NULL || config->accel_port == NULL ||
+      config->gyro_port == NULL || config->accel_pin == 0U || config->gyro_pin == 0U ||
+      config->delay_ms == NULL || config->timeout_ms == 0U || config->accel_range > 3U ||
+      config->gyro_range > 4U || config->gyro_bandwidth > 7U ||
+      (config->accel_conf >> 4U) < 8U || (config->accel_conf >> 4U) > 10U ||
+      (config->accel_conf & 15U) < 5U || (config->accel_conf & 15U) > 12U) { return false; }
+  memset(handle, 0, sizeof(*handle));
+  handle->config = *config;
+  Bmi088_Deselect(handle);
+  config->delay_ms(10U);
+  uint8_t id = 0U;
+  /* 首次读只用于产生 CS 上升沿。复位后再次 dummy 读，不把该值作为 ID。 */
+  if (!Bmi088_ReadRegister(handle, true, 0x00U, &id) ||
+      !Bmi088_WriteRegister(handle, true, 0x7EU, BMI088_RESET_CMD)) { return false; }
+  config->delay_ms(10U);
+  if (!Bmi088_ReadRegister(handle, true, 0x00U, &id) ||
+      !Bmi088_WriteRegister(handle, false, 0x14U, BMI088_RESET_CMD)) { return false; }
+  config->delay_ms(80U); /* 陀螺仪启动最大 80 ms，手册 §1。 */
+  if (!Bmi088_ReadRegister(handle, true, 0x00U, &id) || id != 0x1EU ||
+      !Bmi088_ReadRegister(handle, false, 0x00U, &id) || id != 0x0FU) { return false; }
+  /* 先开启加速度电源，再写滤波/量程；中断输出低有效，与 CubeMX 下降沿一致。 */
+  if (!Bmi088_WriteChecked(handle, true, 0x7DU, 0x04U, 0x04U) ||
+      !Bmi088_WriteChecked(handle, true, 0x7CU, 0x00U, 0x03U) ||
+      !Bmi088_WriteChecked(handle, true, 0x40U, config->accel_conf, 0xFFU) ||
+      !Bmi088_WriteChecked(handle, true, 0x41U, config->accel_range, 0x03U) ||
+      !Bmi088_WriteChecked(handle, true, 0x53U, 0x08U, 0x0EU) ||
+      !Bmi088_WriteChecked(handle, true, 0x58U, 0x04U, 0x44U) ||
+      !Bmi088_WriteChecked(handle, false, 0x0FU, config->gyro_range, 0x07U) ||
+      !Bmi088_WriteChecked(handle, false, 0x10U, config->gyro_bandwidth, 0x7FU) ||
+      !Bmi088_WriteChecked(handle, false, 0x11U, 0x00U, 0xA0U) ||
+      !Bmi088_WriteChecked(handle, false, 0x16U, 0x00U, 0x0FU) ||
+      !Bmi088_WriteChecked(handle, false, 0x18U, 0x01U, 0x81U) ||
+      !Bmi088_WriteChecked(handle, false, 0x15U, 0x80U, 0x80U)) { return false; }
+  config->delay_ms(80U);
+  handle->initialized = true;
+  return true;
+}
+```
+
+## Bmi088_FinishRead
+
+dummy偏移、补码、量程与温度解析。
+
+源文件：[Core/Src/bsp/bmi088/bmi088.c](../Core/Src/bsp/bmi088/bmi088.c)，定义始于第 130 行。
+
+```c
+bool Bmi088_FinishRead(Bmi088_HandleTypeDef *handle) {
+  if (handle == NULL || handle->dma_state != BMI088_DMA_DONE) { return false; }
+  __DMB();
+  if (handle->channel == BMI088_CHANNEL_TEMP) {
+    int32_t raw = ((int32_t)handle->rx[2] << 3U) | (handle->rx[3] >> 5U);
+    handle->sample.temperature_valid = raw != 1024; /* 0x80/0x00 为手册无效温度。 */
+    handle->sample.temperature_raw = (int16_t)(raw > 1023 ? raw - 2048 : raw);
+    handle->sample.temperature_c = 23.0f + handle->sample.temperature_raw * 0.125f;
+  } else {
+    bool accel = handle->channel == BMI088_CHANNEL_ACCEL;
+    float scale = accel ? (3.0f * (float)(1U << handle->config.accel_range) * BMI088_GRAVITY_MPS2 / 32768.0f) :
+        (2000.0f / (float)(1U << handle->config.gyro_range) / 32768.0f * BMI088_DEG_TO_RAD);
+    for (unsigned axis = 0U; axis < 3U; ++axis) {
+      int16_t raw = Bmi088_DecodeInt16(&handle->rx[(accel ? 2U : 1U) + 2U * axis]);
+      if (accel) { handle->sample.accel_raw[axis] = raw; handle->sample.accel_mps2[axis] = raw * scale; }
+      else { handle->sample.gyro_raw[axis] = raw; handle->sample.gyro_rad_s[axis] = raw * scale; }
+    }
+  }
+  handle->dma_state = BMI088_DMA_IDLE;
+  return true;
+}
+```
+
+## Ist8310_PollInit
+
+分步复位与配置回读，不暂停融合100ms。
+
+源文件：[Core/Src/bsp/ist8310/ist8310.c](../Core/Src/bsp/ist8310/ist8310.c)，定义始于第 29 行。
+
+```c
+Ist8310_InitStateTypeDef Ist8310_PollInit(Ist8310_HandleTypeDef *h, uint32_t now_ms) {
+  if (h==NULL || h->config.i2c==NULL) { return IST8310_INIT_ERROR; }
+  static const uint8_t registers[4][2]={{0x0BU,0x08U},{0x41U,0x09U},{0x42U,0xC0U},{0x0AU,0x0BU}};
+  uint8_t value=0U;
+  if (h->init_state==IST8310_INIT_RESET_LOW && (uint32_t)(now_ms-h->phase_ms)>=50U) {
+    HAL_GPIO_WritePin(h->config.reset_port,h->config.reset_pin,GPIO_PIN_SET);
+    h->phase_ms=now_ms; h->init_state=IST8310_INIT_RESET_HIGH;
+  } else if (h->init_state==IST8310_INIT_RESET_HIGH && (uint32_t)(now_ms-h->phase_ms)>=50U) {
+    h->init_state=Ist8310_ReadRegisters(h,0x00U,&value,1U) && value==0x10U ? IST8310_INIT_WRITE : IST8310_INIT_ERROR;
+  } else if (h->init_state==IST8310_INIT_WRITE) {
+    value=registers[h->register_index][1];
+    h->init_state=HAL_I2C_Mem_Write(h->config.i2c,IST8310_HAL_ADDRESS,registers[h->register_index][0],
+        I2C_MEMADD_SIZE_8BIT,&value,1U,h->config.timeout_ms)==HAL_OK ? IST8310_INIT_VERIFY : IST8310_INIT_ERROR;
+    h->phase_ms=now_ms;
+  } else if (h->init_state==IST8310_INIT_VERIFY && (uint32_t)(now_ms-h->phase_ms)>=1U) {
+    if (!Ist8310_ReadRegisters(h,registers[h->register_index][0],&value,1U) || value!=registers[h->register_index][1]) {
+      h->init_state=IST8310_INIT_ERROR;
+    } else if (++h->register_index==4U) { h->init_state=IST8310_INIT_READY; h->initialized=true; }
+    else { h->init_state=IST8310_INIT_WRITE; }
+  }
+  return h->init_state;
+}
+```
+
+## Ist8310_Read
+
+STAT1新数据/覆盖和μT转换。
+
+源文件：[Core/Src/bsp/ist8310/ist8310.c](../Core/Src/bsp/ist8310/ist8310.c)，定义始于第 62 行。
+
+```c
+Ist8310_ReadResultTypeDef Ist8310_Read(Ist8310_HandleTypeDef *handle) {
+  if (handle == NULL || !handle->initialized) { return IST8310_READ_ERROR; }
+  uint8_t bytes[7];
+  if (!Ist8310_ReadRegisters(handle, 0x02U, bytes, sizeof(bytes))) { return IST8310_READ_ERROR; }
+  handle->status = bytes[0];
+  if ((bytes[0] & 0x01U) == 0U) { return IST8310_READ_NOT_READY; }
+  for (unsigned axis = 0U; axis < 3U; ++axis) {
+    uint32_t raw = (uint32_t)bytes[1U + axis * 2U] | ((uint32_t)bytes[2U + axis * 2U] << 8U);
+    handle->raw[axis] = (int16_t)(raw >= 32768U ? (int32_t)raw - 65536 : (int32_t)raw);
+    handle->mag_ut[axis] = handle->raw[axis] * IST8310_UT_PER_LSB;
+  }
+  return (bytes[0] & 0x02U) != 0U ? IST8310_READ_OVERRUN : IST8310_READ_OK;
+}
+```
+
+## Ahrs_Init
+
+保持真实倾角，建立零航向与磁参考。
+
+源文件：[Core/Src/algorithm/ahrs/ahrs.c](../Core/Src/algorithm/ahrs/ahrs.c)，定义始于第 99 行。
+
+```c
+bool Ahrs_Init(Ahrs_HandleTypeDef *h, const Ahrs_ConfigTypeDef *config,
+               const float accel[3], const float mag[3]) {
+  if (h == NULL) { return false; }
+  memset(h, 0, sizeof(*h));
+  if (!Ahrs_ConfigValid(config) || !Ahrs_Finite3(accel)) { return false; }
+  float norm = Ahrs_Norm3(accel);
+  if (!isfinite(norm) || norm < AHRS_NORM_EPSILON ||
+      fabsf(norm / config->gravity_mps2 - 1.0f) >= config->accel_reject_fraction) { return false; }
+  h->config = *config;
+  float roll = atan2f(-accel[1], -accel[2]);
+  float pitch = atan2f(accel[0], hypotf(accel[1], accel[2]));
+  float cr = cosf(roll * 0.5f), sr = sinf(roll * 0.5f);
+  float cp = cosf(pitch * 0.5f), sp = sinf(pitch * 0.5f);
+  h->q[0] = cr*cp; h->q[1] = sr*cp; h->q[2] = cr*sp; h->q[3] = -sr*sp;
+  h->initialized = true;
+  (void)Ahrs_SetMagReference(h, mag);
+  return true;
+}
+```
+
+## Ahrs_Update
+
+实际dt、重力反馈、磁门控和有界航向恢复。
+
+源文件：[Core/Src/algorithm/ahrs/ahrs.c](../Core/Src/algorithm/ahrs/ahrs.c)，定义始于第 118 行。
+
+```c
+bool Ahrs_Update(Ahrs_HandleTypeDef *h, const float gyro[3], const float accel[3],
+                 const float mag[3], float dt) {
+  if (h == NULL || !h->initialized || !Ahrs_Finite3(gyro) || !isfinite(dt) ||
+      dt <= 0.0f || dt > h->config.max_dt_s) { return false; }
+  Ahrs_HandleTypeDef next = *h; /* 候选状态全部验证后提交，失败不污染四元数。 */
+  float omega[3] = {gyro[0],gyro[1],gyro[2]};
+  float down[3], reference_down[3] = {0.0f,0.0f,1.0f};
+  Ahrs_Rotate(h->q, reference_down, down, true);
+  next.accel_weight = 0.0f;
+  float error[3] = {0};
+  if (Ahrs_Finite3(accel)) {
+    float norm = Ahrs_Norm3(accel);
+    if (isfinite(norm) && norm > AHRS_NORM_EPSILON) {
+      float deviation = fabsf(norm / h->config.gravity_mps2 - 1.0f);
+      next.accel_weight = Ahrs_Clamp((h->config.accel_reject_fraction-deviation) /
+          (h->config.accel_reject_fraction-h->config.accel_full_fraction),0.0f,1.0f);
+      float measured[3] = {-accel[0]/norm,-accel[1]/norm,-accel[2]/norm};
+      error[0] = measured[1]*down[2]-measured[2]*down[1];
+      error[1] = measured[2]*down[0]-measured[0]*down[2];
+      error[2] = measured[0]*down[1]-measured[1]*down[0];
+    }
+  }
+  for (unsigned i = 0U; i < 3U; ++i) {
+    if (h->config.ki == 0.0f) { next.integral_rad_s[i] = 0.0f; }
+    else if (next.accel_weight > 0.0f) {
+      next.integral_rad_s[i] = Ahrs_Clamp(next.integral_rad_s[i] +
+          h->config.ki*error[i]*next.accel_weight*dt, -h->config.integral_limit_rad_s, h->config.integral_limit_rad_s);
+    }
+    omega[i] += h->config.kp*error[i]*next.accel_weight + next.integral_rad_s[i];
+  }
+  /* 比较水平磁方向，只沿重力轴反馈。模长和创新门同时通过才恢复权重。 */
+  next.mag_used = false;
+  if (!next.mag_reference_valid) { (void)Ahrs_SetMagReference(&next, mag); }
+  if (next.mag_reference_valid && Ahrs_Finite3(mag)) {
+    float norm = Ahrs_Norm3(mag), world[3];
+    Ahrs_Rotate(h->q, mag, world, false);
+    if (isfinite(norm) && norm >= h->config.mag_min_ut && norm <= h->config.mag_max_ut &&
+        fabsf(norm / next.mag_reference_ut - 1.0f) <= h->config.mag_relative_tolerance &&
+        hypotf(world[0],world[1]) > 0.1f*norm) {
+      float innovation = atan2f(world[0]*next.mag_reference[1]-world[1]*next.mag_reference[0],
+                                world[0]*next.mag_reference[0]+world[1]*next.mag_reference[1]);
+      if (fabsf(innovation) <= h->config.mag_innovation_rad) {
+        next.mag_weight = fminf(1.0f, next.mag_weight + dt/h->config.mag_recovery_s);
+        float correction = Ahrs_Clamp(h->config.kp*innovation, -h->config.mag_rate_limit_rad_s,
+                                       h->config.mag_rate_limit_rad_s) * next.mag_weight;
+        for (unsigned i = 0U; i < 3U; ++i) { omega[i] += correction*down[i]; }
+        next.mag_used = true;
+      }
+    }
+  }
+  if (!next.mag_used) { next.mag_weight = 0.0f; }
+  float w=h->q[0], x=h->q[1], y=h->q[2], z=h->q[3];
+  float gx=omega[0]*dt*0.5f, gy=omega[1]*dt*0.5f, gz=omega[2]*dt*0.5f;
+  next.q[0]=w-x*gx-y*gy-z*gz; next.q[1]=x+w*gx+y*gz-z*gy;
+  next.q[2]=y+w*gy-x*gz+z*gx; next.q[3]=z+w*gz+x*gy-y*gx;
+  float norm = hypotf(hypotf(next.q[0],next.q[1]),hypotf(next.q[2],next.q[3]));
+  if (!isfinite(norm) || norm < AHRS_NORM_EPSILON) { return false; }
+  for (unsigned i = 0U; i < 4U; ++i) { next.q[i] /= norm; }
+  *h = next;
+  return true;
+}
+```
+
+## Ins_Calibrate
+
+Welford连续静止窗口与零偏。
+
+源文件：[Core/Src/app/ins/ins.c](../Core/Src/app/ins/ins.c)，定义始于第 107 行。
+
+```c
+static bool Ins_Calibrate(const Ins_InputTypeDef *input, const float gyro[3]) {
+  Ins_RuntimeTypeDef *r=&g_ins;
+  float accel_norm=hypotf(hypotf(r->current.accel_mps2[0],r->current.accel_mps2[1]),r->current.accel_mps2[2]);
+  float gyro_norm=hypotf(hypotf(gyro[0],gyro[1]),gyro[2]);
+  if (!r->current.accel_valid || !isfinite(accel_norm) || !isfinite(gyro_norm) ||
+      gyro_norm>r->config.still_gyro_rad_s ||
+      fabsf(accel_norm/r->config.ahrs.gravity_mps2-1.0f)>r->config.still_accel_fraction) {
+    Ins_ClearCalibration(); return false;
+  }
+  if (r->still_count==0U) { r->still_start_ms=input->now_ms; }
+  ++r->still_count;
+  for (unsigned i=0U;i<3U;++i) {
+    float delta=gyro[i]-r->mean_gyro[i];
+    r->mean_gyro[i]+=delta/(float)r->still_count;
+    r->m2_gyro[i]+=delta*(gyro[i]-r->mean_gyro[i]);
+    r->mean_accel[i]+=(r->current.accel_mps2[i]-r->mean_accel[i])/(float)r->still_count;
+  }
+  if ((uint32_t)(input->now_ms-r->still_start_ms)<r->config.still_ms || r->still_count<2U) { return false; }
+  for (unsigned i=0U;i<3U;++i) {
+    if (r->m2_gyro[i]/(float)(r->still_count-1U)>r->config.still_gyro_std_rad_s*r->config.still_gyro_std_rad_s) {
+      Ins_ClearCalibration(); return false;
+    }
+  }
+  if (!Ahrs_Init(&r->ahrs,&r->config.ahrs,r->mean_accel,
+                  r->current.mag_valid && r->config.mag_calibrated ? r->current.mag_ut : NULL)) {
+    Ins_ClearCalibration(); return false;
+  }
+  memcpy(r->current.gyro_bias_rad_s,r->mean_gyro,sizeof(r->mean_gyro));
+  r->current.state=INS_STATE_READY;
+  r->current.yaw_total_deg=0.0f;
+  r->current.yaw_deg=0.0f;
+  ++r->current.reset_sequence;
+  return true;
+}
+```
+
+## Ins_Process
+
+安装/标定转换、融合、角度回绕和快照发布。
+
+源文件：[Core/Src/app/ins/ins.c](../Core/Src/app/ins/ins.c)，定义始于第 142 行。
+
+```c
+void Ins_Process(const Ins_InputTypeDef *input) {
+  if (input==NULL || !g_ins.configured) { return; }
+  if (!Ins_Finite3(input->gyro_rad_s) || !isfinite(input->dt_s) || input->dt_s<=0.0f ||
+      input->dt_s>g_ins.config.ahrs.max_dt_s ||
+      (uint32_t)(input->now_ms-input->gyro_ms)>g_ins.config.gyro_timeout_ms) { Ins_SetFault(); return; }
+  Ins_SnapshotTypeDef *s=&g_ins.current;
+  s->gyro_ms=input->gyro_ms; s->accel_ms=input->accel_ms; s->mag_ms=input->mag_ms;
+  s->dt_s=input->dt_s; s->temperature_c=input->temperature_c;
+  s->temperature_valid=input->temperature_valid;
+  /* 温度时间由采集层传递，不能把重复缓存温度伪装成每周期新数据。 */
+  s->temperature_ms=input->temperature_ms;
+  s->dropped_gyro=input->dropped_gyro; s->mag_overruns=input->mag_overruns;
+  memcpy(s->accel_raw,input->accel_raw,sizeof(s->accel_raw));
+  memcpy(s->gyro_raw,input->gyro_raw,sizeof(s->gyro_raw));
+  memcpy(s->mag_raw,input->mag_raw,sizeof(s->mag_raw));
+  memcpy(s->mag_chip_ut,input->mag_ut,sizeof(s->mag_chip_ut));
+  Ahrs_Transform(g_ins.config.bmi_rotation,input->accel_mps2,s->accel_mps2);
+  float gyro[3], centered[3], corrected[3];
+  Ahrs_Transform(g_ins.config.bmi_rotation,input->gyro_rad_s,gyro);
+  for (unsigned i=0U;i<3U;++i) { centered[i]=input->mag_ut[i]-g_ins.config.mag_bias_ut[i]; }
+  Ahrs_Transform(g_ins.config.mag_softiron,centered,corrected);
+  Ahrs_Transform(g_ins.config.mag_rotation,corrected,s->mag_ut);
+  s->accel_valid=input->accel_valid && Ins_Finite3(s->accel_mps2) &&
+      (uint32_t)(input->now_ms-input->accel_ms)<=g_ins.config.accel_timeout_ms;
+  s->mag_valid=input->mag_valid && Ins_Finite3(s->mag_ut) &&
+      (uint32_t)(input->now_ms-input->mag_ms)<=g_ins.config.mag_timeout_ms;
+  bool just_initialized=false;
+  if (s->state!=INS_STATE_READY) {
+    s->state=INS_STATE_WAIT_STILL;
+    just_initialized=Ins_Calibrate(input,gyro);
+  }
+  for (unsigned i=0U;i<3U;++i) { s->gyro_rad_s[i]=gyro[i]-s->gyro_bias_rad_s[i]; }
+  if (s->state==INS_STATE_READY) {
+    if (!just_initialized && !Ahrs_Update(&g_ins.ahrs,s->gyro_rad_s,
+        s->accel_valid ? s->accel_mps2 : NULL,
+        s->mag_valid && g_ins.config.mag_calibrated ? s->mag_ut : NULL,input->dt_s)) { Ins_SetFault(); return; }
+    float angles[3];
+    Ahrs_GetEuler(&g_ins.ahrs,angles);
+    float yaw=angles[0]*INS_RAD_TO_DEG;
+    float delta=yaw-s->yaw_deg;
+    if (delta>180.0f) { delta-=360.0f; } else if (delta<-180.0f) { delta+=360.0f; }
+    s->yaw_total_deg+=delta;
+    s->yaw_deg=yaw; s->pitch_deg=angles[1]*INS_RAD_TO_DEG; s->roll_deg=angles[2]*INS_RAD_TO_DEG;
+    memcpy(s->q,g_ins.ahrs.q,sizeof(s->q));
+    s->mag_used=g_ins.ahrs.mag_used;
+    s->mode=s->mag_used ? INS_MODE_NINE_AXIS :
+        (g_ins.ahrs.accel_weight>0.0f || just_initialized ? INS_MODE_SIX_AXIS : INS_MODE_GYRO);
+    s->attitude_valid=g_ins.config.mount_confirmed && s->accel_valid;
+  } else { s->attitude_valid=false; s->mag_used=false; s->mode=INS_MODE_INVALID; }
+  Ins_Publish();
+}
+```
+
+## Ins_GetSnapshot
+
+短临界区复制并重新检查HAL年龄。
+
+源文件：[Core/Src/app/ins/ins.c](../Core/Src/app/ins/ins.c)，定义始于第 194 行。
+
+```c
+bool Ins_GetSnapshot(Ins_SnapshotTypeDef *output) {
+  if (output==NULL) { return false; }
+  uint32_t gyro_timeout,accel_timeout,mag_timeout;
+  taskENTER_CRITICAL();
+  bool available=g_published;
+  *output=g_snapshot;
+  gyro_timeout=g_gyro_timeout_ms; accel_timeout=g_accel_timeout_ms; mag_timeout=g_mag_timeout_ms;
+  taskEXIT_CRITICAL();
+  uint32_t now=HAL_GetTick();
+  if ((uint32_t)(now-output->gyro_ms)>gyro_timeout) { output->attitude_valid=false; output->mode=INS_MODE_INVALID; }
+  if ((uint32_t)(now-output->accel_ms)>accel_timeout) {
+    output->accel_valid=false; output->attitude_valid=false;
+    if (output->mode!=INS_MODE_INVALID) { output->mode=INS_MODE_GYRO; }
+  }
+  if ((uint32_t)(now-output->mag_ms)>mag_timeout) {
+    output->mag_valid=false; output->mag_used=false;
+    if (output->mode==INS_MODE_NINE_AXIS) { output->mode=INS_MODE_SIX_AXIS; }
+  }
+  return available;
+}
+```
+
+## InsTask_ReadDma
+
+任务通知有界等待；DMA失败阶段和Abort前SPI错误留证，传感器通知不能冒充完成。
+
+源文件：[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c)，定义始于第 174 行。
+
+```c
+static bool InsTask_ReadDma(Bmi088_ChannelTypeDef channel) {
+  uint32_t events;
+  g_runtime.dma_failure=INS_TASK_DMA_FAILURE_NONE;
+  (void)xTaskNotifyWait(0U,UINT32_MAX,&events,0U);
+  if (!Bmi088_StartRead(&g_runtime.bmi,channel)) {
+    g_runtime.dma_failure=INS_TASK_DMA_FAILURE_START;
+    g_runtime.dma_spi_error=hspi1.ErrorCode;
+    return false;
+  }
+  TickType_t start=xTaskGetTickCount(), timeout=pdMS_TO_TICKS(INS_DMA_TIMEOUT_MS);
+  while (g_runtime.bmi.dma_state==BMI088_DMA_BUSY) {
+    TickType_t elapsed=xTaskGetTickCount()-start;
+    if (elapsed>=timeout) {
+      g_runtime.dma_failure=INS_TASK_DMA_FAILURE_TIMEOUT;
+      g_runtime.dma_spi_error=hspi1.ErrorCode;
+      Bmi088_Abort(&g_runtime.bmi); return false;
+    }
+    (void)xTaskNotifyWait(0U,UINT32_MAX,&events,timeout-elapsed);
+  }
+  if (!Bmi088_FinishRead(&g_runtime.bmi)) {
+    g_runtime.dma_failure=INS_TASK_DMA_FAILURE_FINISH;
+    g_runtime.dma_spi_error=hspi1.ErrorCode;
+    return false;
+  }
+  return true;
+}
+```
+
+## InsTask_ImuFault
+
+先记录历史失败出口/时刻/次数，再Abort失效；恢复不清历史原因。
+
+源文件：[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c)，定义始于第 210 行。
+
+```c
+static void InsTask_ImuFault(InsTask_FaultTypeDef reason) {
+  /* 先保留失败证据再Abort；HAL清理可能清错误位，重试不能抹去上次原因。 */
+  g_runtime.last_fault=reason;
+  ++g_runtime.fault_count;
+  g_runtime.fault_ms=HAL_GetTick();
+  g_runtime.fault_dma_failure=g_runtime.dma_failure;
+  g_runtime.fault_spi_error=g_runtime.dma_failure!=INS_TASK_DMA_FAILURE_NONE
+      ? g_runtime.dma_spi_error : hspi1.ErrorCode;
+  g_accept_imu=false;
+  Bmi088_Abort(&g_runtime.bmi);
+  g_runtime.input.accel_valid=false;
+  g_runtime.input.temperature_valid=false;
+  g_runtime.have_cycles=false;
+  g_runtime.bmi_retry_tick=xTaskGetTickCount();
+  Ins_SetFault();
+}
+```
+
+## InsTask_Log
+
+MotionCal Raw帧与状态日志互斥；普通姿态追加采集故障记录，磁长格式不叠加，DMA非阻塞提交。
+
+源文件：[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c)，定义始于第 289 行。
+
+```c
+static void InsTask_Log(uint32_t now) {
+#if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && LOG_INS_MAG_CALIBRATION_ENABLE
+  /* 直接输出未标定/未旋转的磁芯片原始值。前六项占位为0，不代表真实惯性数据。
+   * PJRC ascii_parse不接受冒号/逗号后的空格；必须紧凑输出，并以CR结束帧，保留CRLF。
+   * MotionCal接收int16_t，乘3必须先扩展；越界整帧拒绝，不能钳位或回绕成假磁场。
+   * 单次DMA提交整行，忙时丢帧；只有接受后记录样本时间，不重复提交旧样本。 */
+  if (g_runtime.input.mag_valid && (uint32_t)(now-g_runtime.input.mag_ms)<=INS_MAG_TIMEOUT_MS &&
+      (uint32_t)(now-g_runtime.last_mag_calibration_ms)>=INS_MAG_CALIBRATION_PERIOD_MS &&
+      (!g_runtime.have_mag_calibration_sample || g_runtime.mag_calibration_sample_ms!=g_runtime.input.mag_ms)) {
+    g_runtime.last_mag_calibration_ms=now;
+    long counts[3];
+    for (unsigned i=0U;i<3U;++i) {
+      counts[i]=(long)g_runtime.input.mag_raw[i]*INS_MOTIONCAL_COUNTS_PER_LSB;
+      if (counts[i]<INT16_MIN || counts[i]>INT16_MAX) { return; }
+    }
+    if (LOG_TRY_PRINTF(LOG_CATEGORY_INS_MAG_CALIBRATION,"Raw:0,0,0,0,0,0,%ld,%ld,%ld\r\n",
+        counts[0],counts[1],counts[2])) {
+      g_runtime.mag_calibration_sample_ms=g_runtime.input.mag_ms;
+      g_runtime.have_mag_calibration_sample=true;
+    }
+  }
+#elif LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && LOG_INS_ENABLE
+  if ((uint32_t)(now-g_runtime.last_log_ms)>=INS_LOG_PERIOD_MS) {
+    g_runtime.last_log_ms=now;
+    Ins_SnapshotTypeDef s;
+    if (Ins_GetSnapshot(&s)) {
+      /* 采集诊断与姿态状态共用一次 DMA 提交，避免第二次提交必因首条仍在发送而丢弃。
+       * 原码为未映射/未去偏置的芯片LSB，比力为转换后的机体系mm/s²；同快照对照可发现重复取反。 */
+      (void)LOG_TRY_PRINTF(LOG_CATEGORY_INS,"姿态,状态=%u,有效=%u,安装=%u,磁融合=%u,航向/俯仰/横滚毫度=%ld/%ld/%ld,重置=%lu,丢帧=%lu"
+#if !LOG_INS_MAG_DIAGNOSTIC_ENABLE
+        ",时间ms=%lu,序号=%lu,上次采集故障=%u,故障次数=%lu,故障时刻ms=%lu,初始化次数=%lu,DMA失败阶段=%u,SPI错误=%lu"
+#endif
+        "\r\n"
+#if LOG_INS_MAG_DIAGNOSTIC_ENABLE
+        "[DEBUG-INS-MAG-1018],时间ms=%lu,序号=%lu,磁有效=%u,磁龄ms=%lu,磁芯片nT=%ld/%ld/%ld,磁机体nT=%ld/%ld/%ld,角速度urad_s=%ld/%ld/%ld,四元数百万分=%ld/%ld/%ld/%ld,温度毫摄氏度=%ld,加计原码=%d/%d/%d,陀螺原码=%d/%d/%d,比力mm_s2=%ld/%ld/%ld\r\n"
+#endif
+        ,
+        (unsigned)s.state,(unsigned)s.attitude_valid,(unsigned)s.mount_confirmed,(unsigned)s.mag_used,
+        InsTask_ScaledLog(s.yaw_deg,1000.0f),InsTask_ScaledLog(s.pitch_deg,1000.0f),InsTask_ScaledLog(s.roll_deg,1000.0f),
+        (unsigned long)s.reset_sequence,(unsigned long)s.dropped_gyro
+#if !LOG_INS_MAG_DIAGNOSTIC_ENABLE
+        ,(unsigned long)now,(unsigned long)s.sequence,(unsigned)g_runtime.last_fault,
+        (unsigned long)g_runtime.fault_count,(unsigned long)g_runtime.fault_ms,
+        (unsigned long)g_runtime.init_attempts,(unsigned)g_runtime.fault_dma_failure,
+        (unsigned long)g_runtime.fault_spi_error
+#endif
+#if LOG_INS_MAG_DIAGNOSTIC_ENABLE
+        ,(unsigned long)now,(unsigned long)s.sequence,(unsigned)s.mag_valid,(unsigned long)(now-s.mag_ms),
+        InsTask_ScaledLog(s.mag_chip_ut[0],1000.0f),InsTask_ScaledLog(s.mag_chip_ut[1],1000.0f),InsTask_ScaledLog(s.mag_chip_ut[2],1000.0f),
+        InsTask_ScaledLog(s.mag_ut[0],1000.0f),InsTask_ScaledLog(s.mag_ut[1],1000.0f),InsTask_ScaledLog(s.mag_ut[2],1000.0f),
+        InsTask_ScaledLog(s.gyro_rad_s[0],1000000.0f),InsTask_ScaledLog(s.gyro_rad_s[1],1000000.0f),InsTask_ScaledLog(s.gyro_rad_s[2],1000000.0f),
+        InsTask_ScaledLog(s.q[0],1000000.0f),InsTask_ScaledLog(s.q[1],1000000.0f),InsTask_ScaledLog(s.q[2],1000000.0f),InsTask_ScaledLog(s.q[3],1000000.0f),
+        InsTask_ScaledLog(s.temperature_c,1000.0f),
+        (int)s.accel_raw[0],(int)s.accel_raw[1],(int)s.accel_raw[2],
+        (int)s.gyro_raw[0],(int)s.gyro_raw[1],(int)s.gyro_raw[2],
+        InsTask_ScaledLog(s.accel_mps2[0],1000.0f),InsTask_ScaledLog(s.accel_mps2[1],1000.0f),InsTask_ScaledLog(s.accel_mps2[2],1000.0f)
+#endif
+        );
+    }
+  }
+#else
+  (void)now;
+#endif
+}
+```
+
+## InsTask_HardwareReady
+
+BMI硬件先决条件；磁采集启用时才检查I2C3/IST EXTI。
+
+源文件：[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c)，定义始于第 125 行。
+
+```c
+static bool InsTask_HardwareReady(void) {
+  const IRQn_Type irqs[]={EXTI3_IRQn,EXTI4_IRQn,DMA2_Stream0_IRQn,DMA2_Stream3_IRQn,SPI1_IRQn};
+  if (hspi1.Init.BaudRatePrescaler!=SPI_BAUDRATEPRESCALER_16 || hspi1.Init.CLKPolarity!=SPI_POLARITY_HIGH ||
+      hspi1.Init.CLKPhase!=SPI_PHASE_2EDGE ||
+      (EXTI->FTSR & (GPIO_PIN_3|GPIO_PIN_4))!=(GPIO_PIN_3|GPIO_PIN_4) ||
+      (EXTI->RTSR & (GPIO_PIN_3|GPIO_PIN_4))!=0U || SystemCoreClock==0U) { return false; }
+  for (unsigned i=0U;i<sizeof(irqs)/sizeof(irqs[0]);++i) {
+    if (NVIC_GetEnableIRQ(irqs[i])==0U || NVIC_GetPriority(irqs[i])!=5U) { return false; }
+  }
+  /* 六轴不依赖磁接口；只在明确开启磁采集时检查 I2C 和 IST 的 EXTI。 */
+  if (INS_MAG_ENABLE!=0U && (hi2c3.Init.ClockSpeed!=400000U ||
+      (EXTI->FTSR & GPIO_PIN_5)==0U || (EXTI->RTSR & GPIO_PIN_5)!=0U ||
+      NVIC_GetEnableIRQ(EXTI9_5_IRQn)==0U || NVIC_GetPriority(EXTI9_5_IRQn)!=5U)) { return false; }
+  return true;
+}
+```
+
+## InsTask_ServiceMag
+
+磁总门关闭直接返回；开启时执行分步恢复和新鲜数据采集。
+
+源文件：[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c)，定义始于第 249 行。
+
+```c
+static void InsTask_ServiceMag(uint32_t now) {
+  if (INS_MAG_ENABLE==0U) { g_runtime.input.mag_valid=false; return; }
+  Ist8310_HandleTypeDef *mag=&g_runtime.mag;
+  if (!mag->initialized) {
+    if (mag->config.i2c==NULL || mag->init_state==IST8310_INIT_ERROR) {
+      TickType_t tick=xTaskGetTickCount();
+      if (tick-g_runtime.mag_retry_tick<pdMS_TO_TICKS(INS_RETRY_MS)) { return; }
+      Ist8310_ConfigTypeDef config={.i2c=&hi2c3,.reset_port=RSTN_IST8310_GPIO_Port,
+        .reset_pin=RSTN_IST8310_Pin,.delay_ms=InsTask_DelayMs,.timeout_ms=INS_I2C_TIMEOUT_MS};
+      g_runtime.mag_retry_tick=tick;
+      (void)Ist8310_BeginInit(mag,&config,now);
+    } else { (void)Ist8310_PollInit(mag,now); }
+    return;
+  }
+  InsTask_StampTypeDef stamp=InsTask_GetStamp(&g_mag_stamp);
+  if (stamp.sequence==g_runtime.mag_consumed && (uint32_t)(now-g_runtime.last_mag_poll_ms)<INS_MAG_POLL_MS) { return; }
+  g_runtime.mag_consumed=stamp.sequence;
+  g_runtime.last_mag_poll_ms=now;
+  Ist8310_ReadResultTypeDef result=Ist8310_Read(mag);
+  if (result==IST8310_READ_ERROR) {
+    mag->initialized=false; mag->init_state=IST8310_INIT_ERROR;
+    g_runtime.input.mag_valid=false; g_runtime.mag_retry_tick=xTaskGetTickCount();
+  } else if (result==IST8310_READ_OK || result==IST8310_READ_OVERRUN) {
+    memcpy(g_runtime.input.mag_ut,mag->mag_ut,sizeof(mag->mag_ut));
+    memcpy(g_runtime.input.mag_raw,mag->raw,sizeof(mag->raw));
+    g_runtime.input.mag_ms=HAL_GetTick(); /* 仅实际新数据成功读取才刷新；兜底轮询也可使用。 */
+    g_runtime.input.mag_valid=true;
+    if (result==IST8310_READ_OVERRUN) { ++g_runtime.input.mag_overruns; }
+  }
+}
+```
+
+## InsTask_RuntimeRunCycle
+
+最新DRDY采集、超时恢复；磁服务受INS_MAG_ENABLE控制。
+
+源文件：[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c)，定义始于第 368 行。
+
+```c
+void InsTask_RuntimeRunCycle(void) {
+  uint32_t events;
+  TickType_t tick=xTaskGetTickCount();
+  if (!g_runtime.bmi.initialized && tick-g_runtime.bmi_retry_tick>=pdMS_TO_TICKS(INS_RETRY_MS)) {
+    g_runtime.bmi_retry_tick=tick; InsTask_TryImuInit();
+  }
+  (void)xTaskNotifyWait(0U,UINT32_MAX,&events,pdMS_TO_TICKS(INS_DMA_TIMEOUT_MS));
+  uint32_t now=HAL_GetTick();
+  if (!g_runtime.bmi.initialized) { InsTask_ServiceMag(now); InsTask_Log(now); return; }
+  InsTask_StampTypeDef gyro=InsTask_GetStamp(&g_gyro_stamp);
+  if (gyro.sequence!=g_runtime.gyro_consumed) {
+    /* DWT 约25.6s回绕；再用同一HAL时基检查跨帧间隔，不能让长暂停被模运算伪装成短dt。 */
+    if (g_runtime.have_cycles && (uint32_t)(gyro.ms-g_runtime.last_gyro_ms)>INS_GYRO_TIMEOUT_MS) {
+      InsTask_ImuFault(INS_TASK_FAULT_GYRO_GAP); return;
+    }
+    uint32_t count=gyro.sequence-g_runtime.gyro_consumed;
+    g_runtime.input.dropped_gyro+=count-1U;
+    g_runtime.gyro_consumed=gyro.sequence;
+    if (!InsTask_ReadDma(BMI088_CHANNEL_GYRO)) { InsTask_ImuFault(INS_TASK_FAULT_GYRO_DMA); return; }
+    InsTask_StampTypeDef accel=InsTask_GetStamp(&g_accel_stamp);
+    if (accel.sequence!=g_runtime.accel_consumed) {
+      g_runtime.accel_consumed=accel.sequence;
+      if (!InsTask_ReadDma(BMI088_CHANNEL_ACCEL)) { InsTask_ImuFault(INS_TASK_FAULT_ACCEL_DMA); return; }
+      memcpy(g_runtime.input.accel_mps2,g_runtime.bmi.sample.accel_mps2,sizeof(g_runtime.input.accel_mps2));
+      memcpy(g_runtime.input.accel_raw,g_runtime.bmi.sample.accel_raw,sizeof(g_runtime.input.accel_raw));
+      g_runtime.input.accel_ms=accel.ms; g_runtime.input.accel_valid=true;
+    }
+    now=HAL_GetTick();
+    if ((uint32_t)(now-g_runtime.last_temp_attempt_ms)>=INS_TEMPERATURE_PERIOD_MS) {
+      g_runtime.last_temp_attempt_ms=now;
+      if (!InsTask_ReadDma(BMI088_CHANNEL_TEMP)) { InsTask_ImuFault(INS_TASK_FAULT_TEMP_DMA); return; }
+      g_runtime.input.temperature_c=g_runtime.bmi.sample.temperature_c;
+      g_runtime.input.temperature_valid=g_runtime.bmi.sample.temperature_valid;
+      g_runtime.input.temperature_ms=HAL_GetTick();
+    }
+    memcpy(g_runtime.input.gyro_rad_s,g_runtime.bmi.sample.gyro_rad_s,sizeof(g_runtime.input.gyro_rad_s));
+    memcpy(g_runtime.input.gyro_raw,g_runtime.bmi.sample.gyro_raw,sizeof(g_runtime.input.gyro_raw));
+    g_runtime.input.dt_s=g_runtime.have_cycles ? (float)(uint32_t)(gyro.cycles-g_runtime.previous_cycles)/(float)SystemCoreClock : 0.001f;
+    g_runtime.previous_cycles=gyro.cycles; g_runtime.have_cycles=true;
+    g_runtime.input.gyro_ms=gyro.ms; g_runtime.input.now_ms=HAL_GetTick();
+    g_runtime.last_gyro_ms=gyro.ms;
+    if (g_runtime.input.dt_s<=0.0f || g_runtime.input.dt_s>INS_MAX_DT_S) {
+      InsTask_ImuFault(INS_TASK_FAULT_DT); return;
+    }
+    if ((uint32_t)(g_runtime.input.now_ms-gyro.ms)>INS_GYRO_TIMEOUT_MS) {
+      InsTask_ImuFault(INS_TASK_FAULT_GYRO_AGE); return;
+    }
+    if (!g_runtime.input.accel_valid && (uint32_t)(g_runtime.input.now_ms-g_runtime.imu_start_ms)>INS_ACCEL_TIMEOUT_MS) {
+      InsTask_ImuFault(INS_TASK_FAULT_ACCEL_MISSING); return;
+    }
+    if (g_runtime.input.accel_valid && (uint32_t)(g_runtime.input.now_ms-g_runtime.input.accel_ms)>INS_ACCEL_TIMEOUT_MS) {
+      InsTask_ImuFault(INS_TASK_FAULT_ACCEL_AGE); return;
+    }
+    Ins_Process(&g_runtime.input);
+  } else if ((uint32_t)(now-g_runtime.last_gyro_ms)>INS_GYRO_TIMEOUT_MS) {
+    InsTask_ImuFault(INS_TASK_FAULT_GYRO_MISSING); return;
+  }
+  InsTask_ServiceMag(HAL_GetTick());
+  InsTask_Log(HAL_GetTick());
+}
+```
 
 ## Dbus_DecodeFrame
 
 DBUS位解包、大端/小端区别和范围校验。
 
-源文件：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c)，定义始于第 56 行。
+源文件：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c)，定义始于第 57 行。
 
 ```c
 bool Dbus_DecodeFrame(const uint8_t *b, Dbus_DataTypeDef *data) {
@@ -45,7 +669,7 @@ bool Dbus_DecodeFrame(const uint8_t *b, Dbus_DataTypeDef *data) {
     }
   }
   /*
-   * 拨杆保留值 0 不控制本轮输出许可，接收器切换瞬间仍可保留摇杆输入。
+   * 拨杆保留值 0 不控制输出许可，接收器切换瞬间仍可保留摇杆输入。
    * 鼠标按键只接受协议 0/1；其它值拒绝整帧，防止错位数据触发发射。
    */
   if (decoded.mouse_left > 1U || decoded.mouse_right > 1U) {
@@ -60,7 +684,7 @@ bool Dbus_DecodeFrame(const uint8_t *b, Dbus_DataTypeDef *data) {
 
 DMA块复制到邮箱；环形数组保留一个空槽。
 
-源文件：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c)，定义始于第 123 行。
+源文件：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c)，定义始于第 124 行。
 
 ```c
 static void Dbus_CopyCompleted(uint8_t index) {
@@ -81,6 +705,7 @@ static void Dbus_CopyCompleted(uint8_t index) {
   Dbus_FrameTypeDef *slot = &g_frame_mailbox[g_frame_mailbox_head];
   memcpy(slot->bytes, g_rx_buffers[index], DBUS_FRAME_LENGTH);
   slot->timestamp_ms = HAL_GetTick();
+  slot->timestamp_cycles = DWT->CYCCNT;
   slot->epoch = g_epoch;
   __DMB();
   g_frame_mailbox_head = next_head;
@@ -89,12 +714,24 @@ static void Dbus_CopyCompleted(uint8_t index) {
 
 ## Dbus_Process
 
-邮箱排空、epoch旧帧拒绝和鼠标位移累计。
+无观察者的接收适配；复用同一排空、代数检查和累计流程。
 
-源文件：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c)，定义始于第 270 行。
+源文件：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c)，定义始于第 275 行。
 
 ```c
 void Dbus_Process(uint32_t now_ms) {
+  Dbus_ProcessObserved(now_ms, NULL);
+}
+```
+
+## Dbus_ProcessObserved
+
+逐帧解码、epoch核对与累计；合法提交后在临界区外通知只读观察者。
+
+源文件：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c)，定义始于第 280 行。
+
+```c
+void Dbus_ProcessObserved(uint32_t now_ms, Dbus_FrameObserverTypeDef observer) {
   if (huart3.Instance == NULL || huart3.hdmarx == NULL ||
       huart3.hdmarx->Instance == NULL) {
     return;
@@ -131,6 +768,8 @@ void Dbus_Process(uint32_t now_ms) {
     }
     Dbus_DataTypeDef decoded;
     const bool valid = Dbus_DecodeFrame(frame.bytes, &decoded);
+    bool committed = false;
+    uint32_t sequence = 0U;
     taskENTER_CRITICAL();
     /* 解码期间 ISR 也可能故障。提交前再核对代数，旧帧不能重新宣告在线。 */
     if (frame.epoch == g_epoch && g_active && g_synchronized && !g_restart_requested) {
@@ -139,6 +778,8 @@ void Dbus_Process(uint32_t now_ms) {
         g_snapshot.timestamp_ms = frame.timestamp_ms;
         g_snapshot.valid = true;
         ++g_snapshot.valid_frames;
+        sequence = g_snapshot.valid_frames;
+        committed = true;
         g_snapshot.mouse_delta_x += decoded.mouse_x;
         g_snapshot.mouse_delta_y += decoded.mouse_y;
         ++g_snapshot.mouse_delta_frames;
@@ -148,6 +789,125 @@ void Dbus_Process(uint32_t now_ms) {
       }
     }
     taskEXIT_CRITICAL();
+    if (committed && observer != NULL) {
+      const Dbus_ReceivedFrameTypeDef received = {
+          .data = decoded, .timestamp_ms = frame.timestamp_ms,
+          .timestamp_cycles = frame.timestamp_cycles, .sequence = sequence,
+      };
+      observer(&received);
+    }
+  }
+}
+```
+
+## DbusTrace_RecordFrame
+
+接收帧副本、HAL/DWT时间、微秒间隔与独立诊断丢样计数。
+
+源文件：[Core/Src/task/task_dbus/task_dbus_trace.c](../Core/Src/task/task_dbus/task_dbus_trace.c)，定义始于第 122 行。
+
+```c
+void DbusTrace_RecordFrame(const Dbus_ReceivedFrameTypeDef *frame) {
+  if (frame == NULL) { return; }
+  uint32_t interval_us = DBUS_TRACE_INTERVAL_UNKNOWN_US;
+  if (g_have_frame && frame->timestamp_ms - g_previous_frame_ms < DBUS_TRACE_STATUS_MS &&
+      SystemCoreClock >= 1000000U) {
+    interval_us = (uint32_t)((uint64_t)(uint32_t)(frame->timestamp_cycles -
+        g_previous_frame_cycles) * 1000000U / SystemCoreClock);
+  }
+  g_have_frame = true;
+  g_previous_frame_ms = frame->timestamp_ms;
+  g_previous_frame_cycles = frame->timestamp_cycles;
+  DbusTrace_RecordTypeDef *record = DbusTrace_Reserve();
+  if (record != NULL) {
+    record->is_frame = true;
+    record->data.frame.received = *frame;
+    record->data.frame.interval_us = interval_us;
+  }
+}
+```
+
+## DbusTrace_RecordCommand
+
+同周期命令与累计鼠标输入，0.001千分比量化只用于诊断。
+
+源文件：[Core/Src/task/task_dbus/task_dbus_trace.c](../Core/Src/task/task_dbus/task_dbus_trace.c)，定义始于第 142 行。
+
+```c
+void DbusTrace_RecordCommand(const Dbus_SnapshotTypeDef *input, uint32_t control_ms,
+    float virtual_x, float virtual_y, float yaw, float pitch, bool enabled,
+    uint8_t x_state, uint8_t y_state) {
+  if (input == NULL) { return; }
+  const DbusTrace_CommandTypeDef value = {
+      .virtual_x = DbusTrace_Quantize(virtual_x), .virtual_y = DbusTrace_Quantize(virtual_y),
+      .yaw = DbusTrace_Quantize(yaw), .pitch = DbusTrace_Quantize(pitch),
+      .flags = (input->online ? 1U : 0U) | (enabled ? 2U : 0U) |
+          (DBUS_MOUSE_VIRTUAL_ENABLE ? 4U : 0U) |
+          ((uint32_t)(x_state & 3U) << 4U) | ((uint32_t)(y_state & 3U) << 6U),
+  };
+  const uint32_t sample_ms = HAL_GetTick();
+  const uint32_t cycles = DWT->CYCCNT;
+  if (g_have_command && input->valid_frames == g_previous_sequence &&
+      memcmp(&value, &g_previous_command, sizeof(value)) == 0 &&
+      sample_ms - g_previous_command_ms < DBUS_TRACE_HEARTBEAT_MS) { return; }
+  g_have_command = true;
+  g_previous_command = value;
+  g_previous_sequence = input->valid_frames;
+  g_previous_command_ms = sample_ms;
+  DbusTrace_RecordTypeDef *record = DbusTrace_Reserve();
+  if (record != NULL) {
+    record->data.command.value = value;
+    record->data.command.sample_ms = sample_ms;
+    record->data.command.cycles = cycles;
+    record->data.command.control_ms = control_ms;
+    record->data.command.receive_ms = input->timestamp_ms;
+    record->data.command.sequence = input->valid_frames;
+    record->data.command.delta_x = input->mouse_delta_x;
+    record->data.command.delta_y = input->mouse_delta_y;
+    record->data.command.frames = input->mouse_delta_frames;
+  }
+}
+```
+
+## DbusTrace_Flush
+
+完整CSV批次经唯一DMA后端提交，忙时保留，接受后出队。
+
+源文件：[Core/Src/task/task_dbus/task_dbus_trace.c](../Core/Src/task/task_dbus/task_dbus_trace.c)，定义始于第 244 行。
+
+```c
+void DbusTrace_Flush(const Dbus_SnapshotTypeDef *input, uint32_t now_ms) {
+  if (input == NULL) { return; }
+  if (g_header < 4U) { DbusTrace_Header(); return; }
+  if (now_ms - g_last_status_ms >= DBUS_TRACE_STATUS_MS) {
+    if (LOG_TRY_PRINTF(LOG_CATEGORY_DBUS_TRACE,
+        "S,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%lu,%lu\r\n",
+        (unsigned long)now_ms, (unsigned long)input->valid_frames,
+        (unsigned long)input->invalid_frames, (unsigned long)input->frame_overruns,
+        (unsigned long)input->resync_count, (unsigned long)input->uart_errors,
+        (unsigned long)input->dma_errors, (unsigned long)input->start_errors,
+        (unsigned long)g_dropped, (unsigned)g_count, (unsigned)g_high_water,
+        (unsigned long)g_rejected, (unsigned long)g_sent)) {
+      g_last_status_ms = now_ms;
+    } else { ++g_rejected; }
+    return;
+  }
+  size_t used = 0U;
+  uint16_t count = 0U;
+  const uint16_t tail = (uint16_t)((g_head + DBUS_TRACE_CAPACITY - g_count) % DBUS_TRACE_CAPACITY);
+  while (count < g_count) {
+    const uint16_t index = (uint16_t)((tail + count) % DBUS_TRACE_CAPACITY);
+    const int length = DbusTrace_Format(g_batch + used, sizeof(g_batch) - used, &g_records[index]);
+    if (length <= 0 || (size_t)length >= sizeof(g_batch) - used) { break; }
+    used += (size_t)length;
+    ++count;
+  }
+  g_batch[used] = '\0';
+  if (count != 0U) {
+    if (LOG_TRY_PRINTF(LOG_CATEGORY_DBUS_TRACE, "%s", g_batch)) {
+      g_count = (uint16_t)(g_count - count);
+      g_sent += count;
+    } else { ++g_rejected; }
   }
 }
 ```
@@ -156,7 +916,7 @@ void Dbus_Process(uint32_t now_ms) {
 
 同一快照复制并消费累计鼠标位移。
 
-源文件：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c)，定义始于第 334 行。
+源文件：[Core/Src/bsp/dbus/dbus.c](../Core/Src/bsp/dbus/dbus.c)，定义始于第 355 行。
 
 ```c
 bool Dbus_GetSnapshot(uint32_t now_ms, Dbus_SnapshotTypeDef *snapshot) {
@@ -190,7 +950,7 @@ bool Dbus_GetSnapshot(uint32_t now_ms, Dbus_SnapshotTypeDef *snapshot) {
 
 摇杆死区和raw→千分比。
 
-源文件：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c)，定义始于第 85 行。
+源文件：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c)，定义始于第 88 行。
 
 ```c
 static float DbusTask_MapChannel(int16_t channel, int32_t sign) {
@@ -214,13 +974,14 @@ static float DbusTask_MapChannel(int16_t channel, int32_t sign) {
 
 同一DBUS快照生成四份命令，保留真实时间戳，不二次消费鼠标。
 
-源文件：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c)，定义始于第 114 行。
+源文件：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c)，定义始于第 117 行。
 
 ```c
 void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
   /* 先消费 ISR 邮箱并处理 DMA 恢复，再一次取得数据和 online。
    * 本周期所有输入用同一帧，不能为各消费者分别取快照并消费鼠标增量。 */
-  Dbus_Process(now_ms);
+  Dbus_ProcessObserved(now_ms, LOG_CATEGORY_ENABLED(LOG_CATEGORY_DBUS_TRACE)
+      ? DbusTrace_RecordFrame : NULL);
   Dbus_SnapshotTypeDef input = {0};
   const bool snapshot_ok = Dbus_GetSnapshot(now_ms, &input);
   /* DMA 可能在入口取 now_ms 后才完成新帧。只在此竞态重读 HAL 时刻，
@@ -245,7 +1006,7 @@ void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
     gimbal_available = false; /* 初始化失败时不能绕过输入算法继续发布两轴有效速度。 */
   }
   /* 摇杆先做死区，再叠加虚拟鼠标速度。虚拟模块用 valid_frames 去重，
-   * 因此任务重复读取同一快照不会重复放大相对位移。 */
+   * 因此任务重复读取同一快照不会重复消费相对位移。 */
   const Yaw_CommandTypeDef yaw = {
       .velocity_permille = gimbal_available ? DbusTask_Combine(
           DbusTask_MapChannel(input.data.channels[DBUS_YAW_CHANNEL], DBUS_YAW_INPUT_SIGN),
@@ -285,6 +1046,11 @@ void DbusTask_RuntimeRunCycle(uint32_t now_ms) {
     .timestamp_ms = input.timestamp_ms,
   };
   (void)ChassisCommand_Submit(&chassis);
+  /* 使用已经发布的同周期输入和命令；诊断失败不改控制状态或命令时间戳。 */
+  DbusTrace_RecordCommand(&input, now_ms, virtual_x, virtual_y,
+      yaw.velocity_permille, pitch.velocity_permille, gimbal_available,
+      (uint8_t)g_mouse_virtual.x.state, (uint8_t)g_mouse_virtual.y.state);
+  DbusTrace_Flush(&input, now_ms);
   /* 合法命令已发布后才尝试遥测。文本和图表共用一次 DMA 提交；忙或过长时下一周期重试。 */
 #if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && (LOG_DBUS_TEXT_ENABLE || LOG_DBUS_CHART_ENABLE)
   if (now_ms - g_last_log_ms >= DBUS_TASK_LOG_PERIOD_MS) {
@@ -376,7 +1142,7 @@ static void MouseVirtualJoystick_AdvanceAxis(
 
 去重、时序校验、分轴累计和输出。
 
-源文件：[Core/Src/algorithm/mouse_virtual_joystick/mouse_virtual_joystick.c](../Core/Src/algorithm/mouse_virtual_joystick/mouse_virtual_joystick.c)，定义始于第 144 行。
+源文件：[Core/Src/algorithm/mouse_virtual_joystick/mouse_virtual_joystick.c](../Core/Src/algorithm/mouse_virtual_joystick/mouse_virtual_joystick.c)，定义始于第 151 行。
 
 ```c
 bool MouseVirtualJoystick_Update(
@@ -413,10 +1179,18 @@ bool MouseVirtualJoystick_Update(
   }
 
   const bool new_frame = !handle->has_frame || frame_sequence != handle->last_frame_sequence;
+  /* 任务周期不代表鼠标采样间隔。多帧累计用前后接收时间覆盖整批，避免任务延迟放大速度。
+   * 首帧和同毫秒帧没有可用间隔，使用配置参考周期，禁止除零。 */
+  uint32_t period_ms = handle->has_frame
+      ? frame_timestamp_ms - handle->last_frame_timestamp_ms : 0U;
+  if (period_ms == 0U) {
+    period_ms = handle->config.reference_period_ms;
+  }
+  const float period_scale = (float)handle->config.reference_period_ms / (float)period_ms;
   if (!MouseVirtualJoystick_UpdateAxis(&handle->x, &handle->config.x, handle->config.output_limit_permille,
-                                       now_ms, frame_timestamp_ms, new_frame ? mouse_x : 0) ||
+                                       period_scale, new_frame, now_ms, frame_timestamp_ms, mouse_x) ||
       !MouseVirtualJoystick_UpdateAxis(&handle->y, &handle->config.y, handle->config.output_limit_permille,
-                                       now_ms, frame_timestamp_ms, new_frame ? mouse_y : 0)) {
+                                       period_scale, new_frame, now_ms, frame_timestamp_ms, mouse_y)) {
     MouseVirtualJoystick_Reset(handle);
     return false;
   }
@@ -426,7 +1200,7 @@ bool MouseVirtualJoystick_Update(
   handle->has_frame = true;
   handle->has_update = true;
   handle->state = handle->x.state > handle->y.state ? handle->x.state : handle->y.state;
-  /* 状态已限幅且有限。保留小数，避免低增益输入在命令边界被吞掉。 */
+  /* 状态已限幅且有限。保留小数，避免低增益输入在命令边界丢失。 */
   *virtual_x = handle->x.value_permille;
   *virtual_y = handle->y.value_permille;
   return true;
@@ -873,23 +1647,48 @@ float GravityCompensation_Update(
 }
 ```
 
-## GimbalControl_Update
+## GimbalControl_Reanchor
 
-目标积分、边界过滤、级联环、补偿和Ramp。
+反馈切换边沿捕获当前角，允许机械范围外；清积分、初始化速度滤波并保留电流Ramp。
 
-源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 123 行。
+源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 102 行。
 
 ```c
-void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
-                          const Gm6020_FeedbackTypeDef *feedback,
-                          const Gimbal_CommandTypeDef *command,
-                          float dt_s,
-                          GimbalControl_OutputTypeDef *output) {
+bool GimbalControl_Reanchor(GimbalControl_HandleTypeDef *controller,
+                            const GimbalControl_FeedbackTypeDef *feedback) {
+  if (controller == NULL || !controller->initialized || feedback == NULL ||
+      !isfinite(feedback->angle_raw) || !isfinite(feedback->speed_rpm)) {
+    return false;
+  }
+  controller->target_angle_raw = feedback->angle_raw;
+  controller->position_integral_rpm = 0.0f;
+  controller->target_speed_rpm = 0.0f;
+  Pid_Reset(&controller->speed_pid);
+  LowPassFilter_Reset(&controller->speed_filter, feedback->speed_rpm);
+  return true;
+}
+```
+
+## GimbalControl_UpdateFeedback
+
+只过滤本次人工增量及对应前馈；分离惯性反馈和机械补偿，不裁剪自动纠偏。
+
+源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 163 行。
+
+```c
+void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
+                                  const GimbalControl_FeedbackTypeDef *feedback,
+                                  const Gimbal_CommandTypeDef *command,
+                                  float dt_s,
+                                  GimbalControl_OutputTypeDef *output) {
   if (output != NULL) {
     *output = (GimbalControl_OutputTypeDef){0};
   }
   if (controller == NULL || feedback == NULL || command == NULL ||
-      output == NULL || !controller->initialized || !isfinite(dt_s) || dt_s <= 0.0f) {
+      output == NULL || !controller->initialized || !isfinite(dt_s) || dt_s <= 0.0f ||
+      !isfinite(feedback->angle_raw) || !isfinite(feedback->speed_rpm) ||
+      !isfinite(controller->target_angle_raw) || !isfinite(command->velocity_permille) ||
+      command->velocity_permille < -1000.0f || command->velocity_permille > 1000.0f) {
     return;
   }
 
@@ -900,8 +1699,8 @@ void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
       ? ((float)command->velocity_permille / 1000.0f) *
             controller->config.max_command_speed_rpm
       : 0.0f;
-  const bool at_min = feedback->angle_total_raw <= controller->config.min_angle_raw;
-  const bool at_max = feedback->angle_total_raw >= controller->config.max_angle_raw;
+  const bool at_min = feedback->mechanical_angle_raw <= controller->config.min_angle_raw;
+  const bool at_max = feedback->mechanical_angle_raw >= controller->config.max_angle_raw;
   const bool remote_command = !command->fixed_target;
   const bool outward_at_min = remote_command && at_min &&
                               requested_command_speed < 0.0f;
@@ -911,23 +1710,41 @@ void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
    * 前馈速度，位置误差虽然为零，速度环仍会向挡块输出电流。（边界像红灯，
    * 不能只禁止加速目标，却继续把油门信号送进下一环。） */
   const bool block_outward = outward_at_min || outward_at_max;
-  const float command_speed = block_outward ? 0.0f : requested_command_speed;
+  bool command_limited = block_outward;
+  float command_speed = block_outward ? 0.0f : requested_command_speed;
   const bool at_or_beyond = at_min || at_max;
 
-  /* 只有非零有效输入更新目标。边界钳位也只作用于本次积分；零输入不能改写保存目标。
-   * 越界反馈不触发重定位，向内命令从最后目标连续积分。（松手只停止目标移动。） */
+  /* 只裁剪本次人工增量，不把惯性角与机械 min/max 直接比较。
+   * 在当前姿态附近，用“机械角 + 惯性目标误差”估计候选机械目标；候选已在范围外时，
+   * 只拒绝继续向外的增量，向内增量仍可逐步减小误差。反馈已到边界或越界时，
+   * 向内命令同周期完整接受。零输入完全跳过本段，底座运动不能重定位保持目标。 */
   if (command_speed != 0.0f) {
-    controller->target_angle_raw +=
-        command_speed * ((float)GM6020_ENCODER_COUNTS_PER_REV / 60.0f) * dt_s;
+    const float raw_per_rpm_s = (float)GM6020_ENCODER_COUNTS_PER_REV / 60.0f;
+    float increment_raw = command_speed * raw_per_rpm_s * dt_s;
+    const float requested_increment_raw = increment_raw;
     if (!at_or_beyond) {
-      controller->target_angle_raw = GimbalControl_Clamp(
-          controller->target_angle_raw, (float)controller->config.min_angle_raw,
-          (float)controller->config.max_angle_raw);
+      const float target_error_raw = controller->target_angle_raw - feedback->angle_raw;
+      const float mechanical_target_raw = (float)feedback->mechanical_angle_raw + target_error_raw;
+      if (increment_raw > 0.0f) {
+        increment_raw = fminf(increment_raw,
+            fmaxf(0.0f, (float)controller->config.max_angle_raw - mechanical_target_raw));
+      } else {
+        increment_raw = fmaxf(increment_raw,
+            fminf(0.0f, (float)controller->config.min_angle_raw - mechanical_target_raw));
+      }
     }
+    if (increment_raw != requested_increment_raw) {
+      command_limited = true;
+      command_speed = increment_raw / (raw_per_rpm_s * dt_s);
+    }
+    const float candidate_target = controller->target_angle_raw + increment_raw;
+    if (!isfinite(candidate_target) || !isfinite(command_speed)) { return; }
+    controller->target_angle_raw = candidate_target;
   }
 
   const float angle_error = controller->target_angle_raw -
-                            (float)feedback->angle_total_raw;
+                            feedback->angle_raw;
+  if (!isfinite(angle_error)) { return; }
   const float previous_integral = controller->position_integral_rpm;
   const float integral_candidate = previous_integral +
       controller->config.position_ki_rpm_per_raw_s * angle_error * dt_s;
@@ -962,7 +1779,11 @@ void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
   const float speed_loop_current =
       Pid_Update(&controller->speed_pid, speed_error, dt_s);
   const float gravity_current = GravityCompensation_Update(
-      &controller->gravity_compensation, feedback->angle_total_raw);
+      &controller->gravity_compensation, feedback->mechanical_angle_raw);
+  if (!isfinite(speed_loop_current) || !isfinite(gravity_current)) {
+    GimbalControl_ResetHistory(controller);
+    return;
+  }
   const float combined_current = GimbalControl_Clamp(
       speed_loop_current + gravity_current, -controller->config.max_current_raw,
       controller->config.max_current_raw);
@@ -974,8 +1795,11 @@ void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
       &controller->current_ramp, combined_current,
       controller->config.current_slew_raw_per_s, dt_s);
 
-  output->target_angle_raw = (int32_t)controller->target_angle_raw;
-  output->angle_error_raw = (int32_t)angle_error;
+  output->target_angle_raw = GimbalControl_ToDiagnosticRaw(controller->target_angle_raw);
+  output->angle_error_raw = GimbalControl_ToDiagnosticRaw(angle_error);
+  output->feedback_angle_raw = feedback->angle_raw;
+  output->feedback_speed_rpm = feedback->speed_rpm;
+  output->accepted_command_speed_rpm = command_speed;
   output->target_speed_rpm = target_speed;
   output->speed_loop_current_raw = GimbalControl_ToCurrent(speed_loop_current);
   output->gravity_compensation_current_raw =
@@ -983,14 +1807,122 @@ void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
   output->target_current_raw = GimbalControl_ToCurrent(ramped_current);
   output->at_min_limit = at_min;
   output->at_max_limit = at_max;
+  output->command_limited = command_limited;
+  output->valid = true;
+}
+```
+
+## GimbalControl_Update
+
+机械反馈适配入口，转成分离反馈后调用同一正式控制器。
+
+源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 145 行。
+
+```c
+void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
+                          const Gm6020_FeedbackTypeDef *feedback,
+                          const Gimbal_CommandTypeDef *command,
+                          float dt_s,
+                          GimbalControl_OutputTypeDef *output) {
+  if (feedback == NULL) {
+    if (output != NULL) { *output = (GimbalControl_OutputTypeDef){0}; }
+    return;
+  }
+  const GimbalControl_FeedbackTypeDef observation = {
+      .angle_raw = (float)feedback->angle_total_raw,
+      .speed_rpm = (float)feedback->speed_rpm,
+      .mechanical_angle_raw = feedback->angle_total_raw,
+  };
+  GimbalControl_UpdateFeedback(controller, &observation, command, dt_s, output);
+}
+```
+
+## GimbalAxis_CheckStabilization
+
+自稳配置合法性，方向、资格/新鲜度时间及Pitch迟滞范围。
+
+源文件：[Core/Src/app/gimbal/gimbal_axis.c](../Core/Src/app/gimbal/gimbal_axis.c)，定义始于第 43 行。
+
+```c
+static bool GimbalAxis_CheckStabilization(const GimbalAxis_StabilizationConfigTypeDef *c) {
+  return !c->enabled ||
+      ((c->axis == GIMBAL_AXIS_INERTIAL_YAW || c->axis == GIMBAL_AXIS_INERTIAL_PITCH) &&
+       (c->feedback_sign == 1 || c->feedback_sign == -1) &&
+       c->ready_ms > 0U && c->ready_ms <= INT32_MAX &&
+       c->timeout_ms > 0U && c->timeout_ms < c->ready_ms &&
+       isfinite(c->exit_pitch_deg) && c->exit_pitch_deg > 0.0f && c->exit_pitch_deg < 90.0f &&
+       isfinite(c->enter_pitch_deg) && c->enter_pitch_deg > 0.0f && c->enter_pitch_deg < c->exit_pitch_deg);
+}
+```
+
+## GimbalAxis_ObserveImu
+
+一次INS快照、重置/新鲜度/连续更新资格和奇异区迟滞，ZYX角速度投影及等效count/rpm换算。
+
+源文件：[Core/Src/app/gimbal/gimbal_axis.c](../Core/Src/app/gimbal/gimbal_axis.c)，定义始于第 211 行。
+
+```c
+static bool GimbalAxis_ObserveImu(GimbalAxis_HandleTypeDef *axis,
+                                 uint32_t now_ms,
+                                 GimbalControl_FeedbackTypeDef *feedback) {
+  const GimbalAxis_StabilizationConfigTypeDef *c = &axis->config.stabilization;
+  Ins_SnapshotTypeDef *s = &axis->cycle.ins;
+  axis->cycle.ins_available = Ins_GetSnapshot(s);
+  axis->cycle.gyro_age_ms = GimbalAxis_FeedbackAge(now_ms, s->gyro_ms);
+  axis->cycle.accel_age_ms = GimbalAxis_FeedbackAge(now_ms, s->accel_ms);
+  if (!axis->cycle.ins_available || s->state != INS_STATE_READY || !s->attitude_valid ||
+      !s->accel_valid || axis->cycle.gyro_age_ms > c->timeout_ms ||
+      axis->cycle.accel_age_ms > c->timeout_ms ||
+      !isfinite(s->yaw_total_deg) || !isfinite(s->pitch_deg) || !isfinite(s->roll_deg) ||
+      !isfinite(s->gyro_rad_s[0]) || !isfinite(s->gyro_rad_s[1]) || !isfinite(s->gyro_rad_s[2])) {
+    return GimbalAxis_RejectImu(axis, GIMBAL_AXIS_REASON_IMU_INVALID);
+  }
+  const float pitch_abs_deg = fabsf(s->pitch_deg);
+  if (pitch_abs_deg >= c->exit_pitch_deg ||
+      (axis->feedback_source == GIMBAL_AXIS_FEEDBACK_ENCODER && pitch_abs_deg > c->enter_pitch_deg)) {
+    return GimbalAxis_RejectImu(axis, GIMBAL_AXIS_REASON_IMU_SINGULAR);
+  }
+  if (axis->feedback_source == GIMBAL_AXIS_FEEDBACK_INERTIAL &&
+      s->reset_sequence != axis->imu_active_reset) {
+    return GimbalAxis_RejectImu(axis, GIMBAL_AXIS_REASON_IMU_RESET);
+  }
+
+  const float roll_rad = s->roll_deg * GIMBAL_AXIS_DEG_TO_RAD;
+  const float pitch_rad = s->pitch_deg * GIMBAL_AXIS_DEG_TO_RAD;
+  const float sin_roll = sinf(roll_rad), cos_roll = cosf(roll_rad);
+  const float rate_rad_s = c->axis == GIMBAL_AXIS_INERTIAL_YAW
+      ? (s->gyro_rad_s[1] * sin_roll + s->gyro_rad_s[2] * cos_roll) / cosf(pitch_rad)
+      : s->gyro_rad_s[1] * cos_roll - s->gyro_rad_s[2] * sin_roll;
+  const float angle_deg = c->axis == GIMBAL_AXIS_INERTIAL_YAW ? s->yaw_total_deg : s->pitch_deg;
+  feedback->angle_raw = angle_deg * GIMBAL_AXIS_RAW_PER_DEG * (float)c->feedback_sign;
+  feedback->speed_rpm = rate_rad_s * GIMBAL_AXIS_RAD_S_TO_RPM * (float)c->feedback_sign;
+  feedback->mechanical_angle_raw = axis->cycle.snapshot.feedback.angle_total_raw;
+  if (!isfinite(feedback->angle_raw) || !isfinite(feedback->speed_rpm)) {
+    return GimbalAxis_RejectImu(axis, GIMBAL_AXIS_REASON_IMU_INVALID);
+  }
+  if (axis->feedback_source == GIMBAL_AXIS_FEEDBACK_INERTIAL && !axis->fallback_pending) {
+    return true;
+  }
+  axis->cycle.reason = GIMBAL_AXIS_REASON_IMU_WAIT;
+  if (axis->fallback_pending) { return false; }
+  if (!axis->imu_qualifying || s->reset_sequence != axis->imu_candidate_reset) {
+    axis->imu_qualifying = true;
+    axis->imu_ready_start_ms = now_ms;
+    axis->imu_last_sequence = s->sequence;
+    axis->imu_candidate_reset = s->reset_sequence;
+    return false;
+  }
+  const bool sample_advanced = s->sequence != axis->imu_last_sequence;
+  axis->imu_last_sequence = s->sequence;
+  return sample_advanced && (uint32_t)(now_ms - axis->imu_ready_start_ms) >= c->ready_ms;
 }
 ```
 
 ## GimbalAxis_Run
 
-一致快照、安全门、恢复、符号和CAN提交。
+各一次CAN/INS快照、反馈切换/降级、目标保持、输出许可和CAN提交。
 
-源文件：[Core/Src/app/gimbal/gimbal_axis.c](../Core/Src/app/gimbal/gimbal_axis.c)，定义始于第 179 行。
+源文件：[Core/Src/app/gimbal/gimbal_axis.c](../Core/Src/app/gimbal/gimbal_axis.c)，定义始于第 272 行。
 
 ```c
 static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
@@ -1001,6 +1933,7 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
     return;
   }
   axis->cycle = (GimbalAxis_OutputTypeDef){0};
+  axis->cycle.feedback_source = axis->feedback_source;
   (void)Gm6020_Process(&axis->motor, now_ms);
   axis->cycle.snapshot_valid =
       Gm6020_GetSnapshot(&axis->motor, &axis->cycle.snapshot);
@@ -1011,6 +1944,10 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
     axis->cycle.feedback_age_ms = GimbalAxis_FeedbackAge(
         now_ms, axis->cycle.snapshot.feedback.last_feedback_tick);
   }
+  const bool stabilization = axis->config.stabilization.enabled && !fixed_target;
+  GimbalControl_FeedbackTypeDef inertial_feedback = {0};
+  const bool inertial_ready = stabilization &&
+      GimbalAxis_ObserveImu(axis, now_ms, &inertial_feedback);
 
   if (!axis->cycle.snapshot_valid || !axis->cycle.snapshot.online ||
       axis->cycle.feedback_age_ms >= axis->config.motor.feedback_timeout_ms) {
@@ -1054,6 +1991,12 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
       (void)GimbalAxis_SendZero(axis);
       return;
     }
+    const GimbalControl_FeedbackTypeDef initial_feedback = {
+        .angle_raw = (float)axis->cycle.snapshot.feedback.angle_total_raw,
+        .speed_rpm = (float)axis->cycle.snapshot.feedback.speed_rpm,
+        .mechanical_angle_raw = axis->cycle.snapshot.feedback.angle_total_raw,
+    };
+    (void)GimbalControl_Reanchor(&axis->controller, &initial_feedback);
     axis->cycle.phase = GIMBAL_AXIS_PHASE_HOLD_POSITION;
     (void)GimbalAxis_SendZero(axis);
     return;
@@ -1066,18 +2009,55 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
     return;
   }
 
+  GimbalControl_FeedbackTypeDef feedback = {
+      .angle_raw = (float)axis->cycle.snapshot.feedback.angle_total_raw,
+      .speed_rpm = (float)axis->cycle.snapshot.feedback.speed_rpm,
+      .mechanical_angle_raw = axis->cycle.snapshot.feedback.angle_total_raw,
+  };
+  /* 参考切换只发生在状态边沿。范围外也锁住当前反馈，不能用 min/max 裁剪。
+   * CAN 恢复且 INS 参考连续时保留惯性目标；INS 失效则捕获机械角并暂停人工输入。
+   * 切换周期不积分输入，避免刚锁定就因旧命令发生目标跳变。 */
+  if (axis->fallback_pending || (!stabilization && axis->feedback_source == GIMBAL_AXIS_FEEDBACK_INERTIAL)) {
+    (void)GimbalControl_Reanchor(&axis->controller, &feedback);
+    axis->feedback_source = GIMBAL_AXIS_FEEDBACK_ENCODER;
+    axis->fallback_pending = false;
+    axis->imu_qualifying = false;
+    axis->cycle.input_inhibited = true;
+  } else if (stabilization && inertial_ready && axis->feedback_source == GIMBAL_AXIS_FEEDBACK_ENCODER) {
+    (void)GimbalControl_Reanchor(&axis->controller, &inertial_feedback);
+    axis->feedback_source = GIMBAL_AXIS_FEEDBACK_INERTIAL;
+    axis->imu_active_reset = axis->cycle.ins.reset_sequence;
+    axis->imu_qualifying = false;
+    axis->cycle.reason = GIMBAL_AXIS_REASON_NONE;
+    axis->cycle.input_inhibited = true;
+  }
+  if (stabilization && axis->feedback_source == GIMBAL_AXIS_FEEDBACK_INERTIAL) {
+    feedback = inertial_feedback;
+  } else if (stabilization) {
+    axis->cycle.input_inhibited = true;
+  }
+  axis->cycle.feedback_source = axis->feedback_source;
+  const Gimbal_CommandTypeDef hold_command = {
+      .enabled = true, .velocity_permille = 0.0f, .timestamp_ms = now_ms,
+  };
+  const Gimbal_CommandTypeDef *effective_command = axis->cycle.input_inhibited ? &hold_command : command;
   if (fixed_target) {
     (void)GimbalControl_SetTargetAngle(&axis->controller, target_angle_raw);
   }
-  GimbalControl_Update(&axis->controller, &axis->cycle.snapshot.feedback,
-                       command, (float)dt_ms / 1000.0f, &axis->cycle.control);
-  if (axis->cycle.limit == GM6020_LIMIT_MIN || axis->cycle.control.at_min_limit) {
-    axis->cycle.limit = GM6020_LIMIT_MIN;
+  GimbalControl_UpdateFeedback(&axis->controller, &feedback,
+      effective_command, (float)dt_ms / 1000.0f, &axis->cycle.control);
+  if (!axis->cycle.control.valid) {
+    GimbalAxis_ResetController(axis);
+    axis->cycle.reason = GIMBAL_AXIS_REASON_CONTROL_INVALID;
+    (void)GimbalAxis_SendZero(axis);
+    return;
+  }
+  if (axis->cycle.control.command_limited && effective_command->velocity_permille < 0.0f) {
     axis->cycle.reason = GIMBAL_AXIS_REASON_SOFT_MIN;
-  } else if (axis->cycle.limit == GM6020_LIMIT_MAX || axis->cycle.control.at_max_limit) {
-    axis->cycle.limit = GM6020_LIMIT_MAX;
+  } else if (axis->cycle.control.command_limited) {
     axis->cycle.reason = GIMBAL_AXIS_REASON_SOFT_MAX;
-  } else if (!command->enabled || command->velocity_permille == 0) {
+  } else if (axis->cycle.reason == GIMBAL_AXIS_REASON_NONE &&
+             (!effective_command->enabled || effective_command->velocity_permille == 0.0f)) {
     axis->cycle.reason = GIMBAL_AXIS_REASON_INPUT_HOLD;
   }
 
@@ -1095,9 +2075,9 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
     (void)GimbalAxis_SendZero(axis);
   }
 
-  if (axis->cycle.limit != GM6020_LIMIT_NONE) {
+  if (axis->cycle.control.command_limited) {
     axis->cycle.phase = GIMBAL_AXIS_PHASE_LIMIT_HOLD;
-  } else if (command->velocity_permille != 0) {
+  } else if (axis->cycle.control.accepted_command_speed_rpm != 0.0f) {
     axis->cycle.phase = GIMBAL_AXIS_PHASE_ACTIVE;
   } else {
     axis->cycle.phase = GIMBAL_AXIS_PHASE_HOLD_POSITION;
@@ -1214,6 +2194,87 @@ static bool Gm6020_SendLocked(Gm6020_HandleTypeDef *hmotor) {
   }
 
   return low_used || high_used;
+}
+```
+
+## Gm6020_TestCalibration_Run
+
+只读标定持续零电流；时间、年龄和反馈来自本周期唯一快照，不运行正式闭环。
+
+源文件：[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c)，定义始于第 29 行。
+
+```c
+void Gm6020_TestCalibration_Run(
+    Gm6020_HandleTypeDef *motor,
+    const Gm6020_CalibrationTypeDef *calibration,
+    Gm6020_TestCalibrationTypeDef *test,
+    uint32_t now_ms) {
+  if (motor == NULL || calibration == NULL || test == NULL) {
+    return;
+  }
+  if (test->axis_name == NULL) {
+    test->axis_name = "云台轴";
+  }
+  if (test->first_limit_name == NULL) {
+    test->first_limit_name = "第一侧限位";
+  }
+  if (test->second_limit_name == NULL) {
+    test->second_limit_name = "第二侧限位";
+  }
+  (void)Gm6020_Process(motor, now_ms);
+  /* 标定永远零输出。即使快照失败也要清零旧目标。避免掉线后残留电流。 */
+  (void)Gm6020_SetOutputEnabled(motor, false);
+  (void)Gm6020_SetCurrent(motor, 0);
+  const bool can_submitted = Gm6020_Send(motor);
+  (void)can_submitted; /* 日志关闭仍发送零电流，不能删除这次 CAN 操作。 */
+#if LOG_GLOBAL_ENABLE && LOG_USART1_ENABLE && LOG_TEST_ENABLE && (LOG_YAW_ENABLE || LOG_PITCH_ENABLE)
+  if (!LOG_CATEGORY_ENABLED(test->log_category)) {
+    return;
+  }
+  const uint32_t log_period_ms = test->log_period_ms != 0U
+      ? test->log_period_ms : GM6020_CALIBRATION_LOG_PERIOD_MS;
+  const uint32_t prompt_period_ms = test->prompt_period_ms != 0U
+      ? test->prompt_period_ms : GM6020_CALIBRATION_PROMPT_PERIOD_MS;
+  Gm6020_SnapshotTypeDef snapshot = {0};
+  const bool snapshot_valid = Gm6020_GetSnapshot(motor, &snapshot);
+
+
+
+  if (!test->prompt_printed ||
+      now_ms - test->last_prompt_ms >= prompt_period_ms) {
+    const bool prompt_sent = LOG_TRY_PRINTF(test->log_category,
+         "[%s标定] 输出命令=零电流\r\n请移动到中位并记录连续角度\r\n"
+        "请移动到%s附近并记录，保留机械安全余量\r\n"
+        "请移动到%s附近并记录，保留机械安全余量\r\n"
+        "记录后填写本轴配置，确认范围后启用标定\r\n",
+        test->axis_name, test->first_limit_name, test->second_limit_name);
+    if (prompt_sent) {
+      test->prompt_printed = true;
+      test->last_prompt_ms = now_ms;
+    }
+  }
+  if (!snapshot_valid ||
+      (test->log_started && now_ms - test->last_log_ms < log_period_ms)) {
+    return;
+  }
+  const uint32_t age_ms = snapshot.feedback_received &&
+                              now_ms - snapshot.feedback.last_feedback_tick <= INT32_MAX
+                                  ? now_ms - snapshot.feedback.last_feedback_tick : 0U;
+  const bool log_sent = LOG_TRY_PRINTF(test->log_category, "[%s标定] 时间ms=%lu 在线=%u 单圈角度=%u 连续角度=%ld 转速=%d "
+               "反馈电流=%d 温度=%u 反馈年龄(ms)=%lu 输出命令=0 CAN提交=%u 配置有效=%u\r\n",
+               test->axis_name, (unsigned long)now_ms, snapshot.online ? 1U : 0U,
+               snapshot.feedback.angle_raw,
+               (long)snapshot.feedback.angle_total_raw,
+               snapshot.feedback.speed_rpm, snapshot.feedback.current_raw,
+               snapshot.feedback.temperature_c, (unsigned long)age_ms,
+               can_submitted ? 1U : 0U, (calibration->valid &&
+                calibration->min_angle_raw < calibration->center_angle_raw &&
+                calibration->center_angle_raw < calibration->max_angle_raw) ? 1U : 0U);
+  if (log_sent) {
+    test->last_log_ms = now_ms;
+    test->log_started = true;
+  }
+#endif
 }
 ```
 

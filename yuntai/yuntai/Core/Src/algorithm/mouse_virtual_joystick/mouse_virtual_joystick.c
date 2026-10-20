@@ -1,11 +1,11 @@
 /**
  * @file mouse_virtual_joystick.c
- * @brief DBUS 鼠标虚拟速度的累计、保持和线性回中实现。
+ * @brief DBUS 鼠标位移测速、缺帧保持和线性回中实现。
  *
- * 每帧鼠标字段是相对位移。帧序号去重后，只累计一次位移乘增益。
- * X/Y 分别保存事件时间。回中从固定起点按绝对时间计算，重复调度不会
- * 加快回中，也不会用 X 输入延长 Y 的运动。（两轴分别松杆。）
- * 浮点累计保留小增量。输出保留浮点千分比。模块不访问外设或 RTOS。
+ * 每帧鼠标字段是相对位移。帧序号去重后，用接收时间差计算本批速度。
+ * 新速度替换旧速度，避免反向输入先抵消历史累计；新帧零位移直接清零。
+ * 缺帧时 X/Y 独立保持和回中。回中使用固定起点和绝对时间，重复调度不会加快回中。
+ * 输出保留浮点千分比和小增量。模块不访问外设或 RTOS。
  */
 #include "algorithm/mouse_virtual_joystick/mouse_virtual_joystick.h"
 
@@ -13,7 +13,7 @@
 #include <math.h>
 #include <stddef.h>
 
-/* 限制已检查的浮点速度。保留小数，避免低增益的小动作被逐帧截断。 */
+/* 限制已检查的浮点速度。保留小数，避免低增益的小动作在输入端丢失。 */
 static float MouseVirtualJoystick_Clamp(float value, int32_t limit) {
   const float bound = (float)limit;
   return value > bound ? bound : value < -bound ? -bound : value;
@@ -60,19 +60,25 @@ static void MouseVirtualJoystick_AdvanceAxis(
   axis->state = MOUSE_VIRTUAL_JOYSTICK_STATE_DECAY;
 }
 
-/* 先按真实经过时间更新旧速度，再累加新位移；反向输入可在同周期抵消或反转。 */
+/* 新帧按接收间隔测速并替换速度；重复帧只推进回中，不能把同一位移再次当作运动。 */
 static bool MouseVirtualJoystick_UpdateAxis(
     MouseVirtualJoystick_AxisTypeDef *axis,
     const MouseVirtualJoystick_AxisConfigTypeDef *config,
     int32_t output_limit_permille,
+    float period_scale,
+    bool new_frame,
     uint32_t now_ms,
     uint32_t event_ms,
     int32_t delta_count) {
   MouseVirtualJoystick_AdvanceAxis(axis, config, now_ms);
-  if (delta_count == 0) {
-    return true; /* 零位移不续期。另一轴输入不影响本轴计时。 */
+  if (!new_frame) {
+    return true;
   }
-  const float value = axis->value_permille + (float)delta_count * config->gain_permille_per_count;
+  if (delta_count == 0) {
+    *axis = (MouseVirtualJoystick_AxisTypeDef){0};
+    return true; /* 接收器明确报告停手时直接停止，不等待缺帧超时。 */
+  }
+  const float value = (float)delta_count * config->gain_permille_per_count * period_scale;
   if (!isfinite(value)) {
     return false; /* 非有限计算结果交由调用者清零，禁止再转换为整数。 */
   }
@@ -88,7 +94,7 @@ static bool MouseVirtualJoystick_UpdateAxis(
 /**
  * @brief 校验配置并初始化虚拟鼠标算法。
  * @param handle 算法状态存储区。
- * @param config 配置副本，单位为 ms 和 ‰/count。
+ * @param config 配置副本，时间为 ms，增益为参考周期下的 ‰/count。
  * @retval true 初始化成功；false 参数无效，有效句柄被清零并失效。
  * @note 单一任务上下文调用，不保存外部指针。
  */
@@ -106,6 +112,7 @@ bool MouseVirtualJoystick_Init(
       copy.x.decay_ms > (uint32_t)INT32_MAX - copy.x.hold_ms ||
       copy.y.hold_ms > (uint32_t)INT32_MAX || copy.y.decay_ms == 0U ||
       copy.y.decay_ms > (uint32_t)INT32_MAX - copy.y.hold_ms ||
+      copy.reference_period_ms == 0U || copy.reference_period_ms > (uint32_t)INT32_MAX ||
       copy.output_limit_permille <= 0 || copy.output_limit_permille > 1000 ||
       !isfinite(copy.x.gain_permille_per_count) || !isfinite(copy.y.gain_permille_per_count)) {
     return false;
@@ -133,8 +140,8 @@ void MouseVirtualJoystick_Reset(MouseVirtualJoystick_HandleTypeDef *handle) {
  * @param now_ms 取得快照后的当前 HAL ms 时刻。
  * @param frame_sequence 合法帧累计序号，支持向前跳号和 uint32_t 回绕。
  * @param frame_timestamp_ms 合法帧的接收时刻，单位 HAL ms。
- * @param mouse_x 本帧 X 位移，单位 count；重复帧不再消费。
- * @param mouse_y 本帧 Y 位移，单位 count；本轴零值不刷新保持时间。
+ * @param mouse_x 本批合法帧 X 位移代数和，单位 count；重复帧不再消费。
+ * @param mouse_y 本批合法帧 Y 位移代数和，单位 count；新帧零值清零本轴。
  * @param online false 时立即清零。
  * @param virtual_x 输出 X 速度，单位 ‰。
  * @param virtual_y 输出 Y 速度，单位 ‰。
@@ -175,10 +182,18 @@ bool MouseVirtualJoystick_Update(
   }
 
   const bool new_frame = !handle->has_frame || frame_sequence != handle->last_frame_sequence;
+  /* 任务周期不代表鼠标采样间隔。多帧累计用前后接收时间覆盖整批，避免任务延迟放大速度。
+   * 首帧和同毫秒帧没有可用间隔，使用配置参考周期，禁止除零。 */
+  uint32_t period_ms = handle->has_frame
+      ? frame_timestamp_ms - handle->last_frame_timestamp_ms : 0U;
+  if (period_ms == 0U) {
+    period_ms = handle->config.reference_period_ms;
+  }
+  const float period_scale = (float)handle->config.reference_period_ms / (float)period_ms;
   if (!MouseVirtualJoystick_UpdateAxis(&handle->x, &handle->config.x, handle->config.output_limit_permille,
-                                       now_ms, frame_timestamp_ms, new_frame ? mouse_x : 0) ||
+                                       period_scale, new_frame, now_ms, frame_timestamp_ms, mouse_x) ||
       !MouseVirtualJoystick_UpdateAxis(&handle->y, &handle->config.y, handle->config.output_limit_permille,
-                                       now_ms, frame_timestamp_ms, new_frame ? mouse_y : 0)) {
+                                       period_scale, new_frame, now_ms, frame_timestamp_ms, mouse_y)) {
     MouseVirtualJoystick_Reset(handle);
     return false;
   }
@@ -188,7 +203,7 @@ bool MouseVirtualJoystick_Update(
   handle->has_frame = true;
   handle->has_update = true;
   handle->state = handle->x.state > handle->y.state ? handle->x.state : handle->y.state;
-  /* 状态已限幅且有限。保留小数，避免低增益输入在命令边界被吞掉。 */
+  /* 状态已限幅且有限。保留小数，避免低增益输入在命令边界丢失。 */
   *virtual_x = handle->x.value_permille;
   *virtual_y = handle->y.value_permille;
   return true;

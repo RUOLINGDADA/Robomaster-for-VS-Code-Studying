@@ -68,7 +68,7 @@
 #define configTICK_RATE_HZ                       ((TickType_t)1000)
 #define configMAX_PRIORITIES                     ( 56 )
 #define configMINIMAL_STACK_SIZE                 ((uint16_t)128)
-#define configTOTAL_HEAP_SIZE                    ((size_t)40960)
+#define configTOTAL_HEAP_SIZE                    ((size_t)49152)
 #define configMAX_TASK_NAME_LEN                  ( 16 )
 #define configUSE_TRACE_FACILITY                 1
 #define configUSE_16_BIT_TICKS                   0
@@ -168,7 +168,7 @@ standard names. */
 #define configCHECK_FOR_STACK_OVERFLOW 2 /* 用户任务栈边界检查，触发钩子记录任务名。 */
 #define configUSE_MALLOC_FAILED_HOOK 1 /* 动态分配失败时进入用户故障钩子。 */
 #undef configTOTAL_HEAP_SIZE
-#define configTOTAL_HEAP_SIZE ((size_t)40960) /* FreeRTOS heap_4 堆大小，单位字节。 */
+#define configTOTAL_HEAP_SIZE ((size_t)49152) /* heap_4 堆大小，bytes；为第六个INS任务预留，CubeMX也须设49152。 */
 /* USER CODE END Defines */
 
 #endif /* FREERTOS_CONFIG_H */

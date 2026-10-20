@@ -20,7 +20,7 @@
 #define DBUS_RETRY_PERIOD_MS 20U /* DMA 启动失败后的重试间隔，单位 HAL ms。不忙等、不停住其它任务。 */
 #define DBUS_SWITCH_UP 1U /* 官方拨杆上档编码。不能按自然顺序猜数值。 */
 #define DBUS_SWITCH_MIDDLE 3U /* 官方拨杆中档编码。中档是 3，不是 2。 */
-#define DBUS_SWITCH_DOWN 2U /* 官方拨杆下档编码。本轮只解码，不参与使能。 */
+#define DBUS_SWITCH_DOWN 2U /* 官方拨杆下档编码；只解码，不参与输出使能。 */
 
 typedef struct {
   int16_t channels[5]; /* CH0/1 右摇杆左右/上下，CH2/3 左摇杆，CH4 滚轮。已减 1024，单位原始计数。 */
@@ -33,6 +33,17 @@ typedef struct {
   uint8_t mouse_right; /* DATA[13]，0/1 为鼠标右键释放/按下。 */
   uint16_t keyboard; /* DATA[14~15] 小端按键位图，bit0~15 为 W/S/A/D/Shift/Ctrl/Q/E/R/F/G/Z/X/C/V/B。 */
 } Dbus_DataTypeDef;
+
+/** 已提交的单个合法接收帧；观察者在 DBUS 任务中同步读取，不持有内部指针。 */
+typedef struct {
+  Dbus_DataTypeDef data; /* 此帧原始通道、鼠标、按钮和键盘。 */
+  uint32_t timestamp_ms; /* DMA 完成 ISR 的 HAL ms，0 ms 也有效。 */
+  uint32_t timestamp_cycles; /* 同次 ISR 的 DWT 周期计数，可回绕；不是发送日志时刻。 */
+  uint32_t sequence; /* 成功提交的合法帧累计序号，可回绕。 */
+} Dbus_ReceivedFrameTypeDef;
+
+/** 任务内只读观察接口；回调不得阻塞、再次消费 DBUS 或保存 frame 指针。 */
+typedef void (*Dbus_FrameObserverTypeDef)(const Dbus_ReceivedFrameTypeDef *frame);
 
 typedef struct {
   Dbus_DataTypeDef data; /* 最近合法帧。离线时仅用于诊断。不能继续驱动。 */
@@ -74,6 +85,14 @@ bool Dbus_Init(void);
  * @note 只由 DBUS 任务调用。HAL_DMA_Abort 的有界等待只发生在任务中。
  */
 void Dbus_Process(uint32_t now_ms);
+/**
+ * @brief 排空接收邮箱，并在每个合法帧提交后通知只读观察者。
+ * @param now_ms HAL ms，与普通 Process 使用同一时基。
+ * @param observer 可为空；在临界区外由 DBUS 任务同步调用，不从 ISR 调用。
+ * @retval None。观察者不改变输入快照和鼠标累计的消费规则。
+ * @note 用于逐帧诊断；回调只复制数据到有界缓冲，不打印或等待串口。
+ */
+void Dbus_ProcessObserved(uint32_t now_ms, Dbus_FrameObserverTypeDef observer);
 /**
  * @brief 获取一份完整数据与接收状态。短临界区保证字段来自同一状态。
  * @param now_ms HAL 毫秒时间，不能传入 FreeRTOS Tick。

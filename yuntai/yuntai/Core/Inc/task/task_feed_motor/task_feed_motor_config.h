@@ -20,7 +20,7 @@
 #define FEED_MOTOR_COMMAND_TIMEOUT_MS 100U /* DBUS 命令期限，HAL ms；过期立即停机。 */
 #define FEED_MOTOR_ID 1U /* CAN2 C610 ID1；反馈标准帧 0x201，控制标准帧 0x200。 */
 #ifndef FEED_MOTOR_STEP_COUNTS
-#define FEED_MOTOR_STEP_COUNTS (4000LL) /* 每次供弹的电机转子连续逻辑 count，非零；用户指定试用值，符号决定目标和逻辑电流方向。 */
+#define FEED_MOTOR_STEP_COUNTS (4000LL) /* 每次供弹的电机转子连续逻辑 count，非零；符号决定目标和逻辑电流方向。 */
 #endif
 #define FEED_MOTOR_CONTINUOUS_PRESS_MS 400U /* 长按阈值，ms；短按完成当前步后停止，长按才建立下一步。 */
 #ifndef FEED_MOTOR_STEP_PAUSE_MS
@@ -44,7 +44,7 @@
 #define FEED_MOTOR_SNAIL_MAX_PULSE_US 1550U /* C615 正式运行上限，us；沿用整车例程 FRIC_UP=1550。 */
 #endif
 #ifndef FEED_MOTOR_SNAIL_ACTIVE_PULSE_US
-#define FEED_MOTOR_SNAIL_ACTIVE_PULSE_US 1400U /* C615 正式活动脉宽，us，范围 (STOP,MAX]；保留当前调参值，需实测带载起转和温升。 */
+#define FEED_MOTOR_SNAIL_ACTIVE_PULSE_US 1400U /* C615 正式活动脉宽，us，范围 (STOP,MAX]；增大可能提高转速和温升。 */
 #endif
 #ifndef FEED_MOTOR_SNAIL_RAMP_TIME_MS
 #define FEED_MOTOR_SNAIL_RAMP_TIME_MS 10U /* C615 启动 Ramp 时间，ms，须为正；松键停止不等待 Ramp。 */

@@ -2,14 +2,18 @@
  * @file gimbal_axis.c
  * @brief GM6020 单轴闭环、反馈安全门与周期诊断。
  *
- * Yaw/Pitch 各自独占实例。所属任务每周期只复制一份反馈。
+ * Yaw/Pitch 各自独占实例。每周期各取一份 CAN/INS 快照，日志复用它们。
  * CAN2 ISR 更新驱动；任务组合控制、输出许可、聚合帧和 UART 日志。
- * 命令失效按零速度保持；反馈或参数失效清零。恢复时重建控制历史。
+ * 命令失效保持惯性目标；IMU 失效转编码器保持，CAN/参数失效清零。
  * 本模块不创建任务，不锁存堵转，不执行机械急停。
  */
 #include "app/gimbal/gimbal_axis.h"
 #include <math.h>
 #include <stddef.h>
+
+#define GIMBAL_AXIS_DEG_TO_RAD 0.017453292519943295f /* deg 转 rad，用于 ZYX 欧拉角速度关系。 */
+#define GIMBAL_AXIS_RAD_S_TO_RPM 9.54929658551372f /* rad/s 转 rpm，60/(2π)。 */
+#define GIMBAL_AXIS_RAW_PER_DEG ((float)GM6020_ENCODER_COUNTS_PER_REV / 360.0f) /* 8192 count/rev 对应的等效 count/deg。 */
 
 /* 将浮点速度安全转换为有符号 16 位，避免 -32768 取反或越界转换。 */
 static int16_t GimbalAxis_ToI16(float value) {
@@ -35,12 +39,24 @@ static uint32_t GimbalAxis_FeedbackAge(uint32_t now_ms,
   return age_ms <= INT32_MAX ? age_ms : 0U;
 }
 
+/* 只验证启用的惯性配置；机械角测试和未启用自稳的调用者不需要填写这些字段。 */
+static bool GimbalAxis_CheckStabilization(const GimbalAxis_StabilizationConfigTypeDef *c) {
+  return !c->enabled ||
+      ((c->axis == GIMBAL_AXIS_INERTIAL_YAW || c->axis == GIMBAL_AXIS_INERTIAL_PITCH) &&
+       (c->feedback_sign == 1 || c->feedback_sign == -1) &&
+       c->ready_ms > 0U && c->ready_ms <= INT32_MAX &&
+       c->timeout_ms > 0U && c->timeout_ms < c->ready_ms &&
+       isfinite(c->exit_pitch_deg) && c->exit_pitch_deg > 0.0f && c->exit_pitch_deg < 90.0f &&
+       isfinite(c->enter_pitch_deg) && c->enter_pitch_deg > 0.0f && c->enter_pitch_deg < c->exit_pitch_deg);
+}
+
 /* 参数无效时禁止闭环，避免 NaN、越界增益或错误滤波权重进入电流计算。 */
 static bool GimbalAxis_CheckParameters(const GimbalAxis_ConfigTypeDef *config) {
   const GimbalControl_ConfigTypeDef *c = &config->control;
   GravityCompensation_HandleTypeDef gravity = {0};
   /* 模型合法性由算法模块定义；这里仅核对补偿上限不超过轴总电流上限。 */
-  return GravityCompensation_Init(&gravity, &c->gravity_compensation) &&
+  return GimbalAxis_CheckStabilization(&config->stabilization) &&
+         GravityCompensation_Init(&gravity, &c->gravity_compensation) &&
          isfinite(c->position_kp_rpm_per_raw) &&
          c->position_kp_rpm_per_raw > 0.0f &&
          isfinite(c->position_ki_rpm_per_raw_s) &&
@@ -145,7 +161,7 @@ const char *GimbalAxis_PhaseName(GimbalAxis_PhaseTypeDef phase) {
   case GIMBAL_AXIS_PHASE_WAIT_FEEDBACK: return "等待反馈";
   case GIMBAL_AXIS_PHASE_HOLD_POSITION: return "保持位置";
   case GIMBAL_AXIS_PHASE_ACTIVE: return "主动控制";
-  case GIMBAL_AXIS_PHASE_LIMIT_HOLD: return "软件限位闭环保持";
+  case GIMBAL_AXIS_PHASE_LIMIT_HOLD: return "人工命令受限，闭环保持";
   case GIMBAL_AXIS_PHASE_FEEDBACK_LOST: return "反馈丢失";
   default: return "初始化";
   }
@@ -166,8 +182,85 @@ const char *GimbalAxis_ReasonName(GimbalAxis_ReasonTypeDef reason) {
   case GIMBAL_AXIS_REASON_TARGET_INVALID: return "目标无效或越界";
   case GIMBAL_AXIS_REASON_CONTROL_INVALID: return "控制参数无效";
   case GIMBAL_AXIS_REASON_INPUT_HOLD: return "遥控输入保持";
+  case GIMBAL_AXIS_REASON_IMU_WAIT: return "等待惯性反馈，编码器保持";
+  case GIMBAL_AXIS_REASON_IMU_INVALID: return "惯性反馈无效，编码器保持";
+  case GIMBAL_AXIS_REASON_IMU_RESET: return "惯性参考已重置，编码器保持";
+  case GIMBAL_AXIS_REASON_IMU_SINGULAR: return "惯性倾角保护，编码器保持";
   default: return "无";
   }
+}
+
+/* 诊断仅显示本周期实际参考系，不能把编码器保持误报为惯性自稳。 */
+const char *GimbalAxis_FeedbackName(GimbalAxis_FeedbackSourceTypeDef source) {
+  return source == GIMBAL_AXIS_FEEDBACK_INERTIAL ? "六轴惯性" : "机械编码器";
+}
+
+/* 无效姿态只请求一次反馈切换；CAN 离线时延迟捕获机械角，不能复用旧编码器值。 */
+static bool GimbalAxis_RejectImu(GimbalAxis_HandleTypeDef *axis,
+                                GimbalAxis_ReasonTypeDef reason) {
+  axis->imu_qualifying = false;
+  axis->fallback_pending = axis->fallback_pending ||
+      axis->feedback_source == GIMBAL_AXIS_FEEDBACK_INERTIAL;
+  axis->cycle.reason = reason;
+  return false;
+}
+
+/* 一次复制 INS 并判定参考连续性，再把 p/q/r 换成与欧拉目标一致的角速度。
+ * 靠近 Pitch ±90°时不能除 cos(Pitch)。无效/重置先降级，再累计新的有效窗口。
+ * 同序号快照不能完成进入窗口；Getter 还会在 INS 任务停摆时撤销有效性。 */
+static bool GimbalAxis_ObserveImu(GimbalAxis_HandleTypeDef *axis,
+                                 uint32_t now_ms,
+                                 GimbalControl_FeedbackTypeDef *feedback) {
+  const GimbalAxis_StabilizationConfigTypeDef *c = &axis->config.stabilization;
+  Ins_SnapshotTypeDef *s = &axis->cycle.ins;
+  axis->cycle.ins_available = Ins_GetSnapshot(s);
+  axis->cycle.gyro_age_ms = GimbalAxis_FeedbackAge(now_ms, s->gyro_ms);
+  axis->cycle.accel_age_ms = GimbalAxis_FeedbackAge(now_ms, s->accel_ms);
+  if (!axis->cycle.ins_available || s->state != INS_STATE_READY || !s->attitude_valid ||
+      !s->accel_valid || axis->cycle.gyro_age_ms > c->timeout_ms ||
+      axis->cycle.accel_age_ms > c->timeout_ms ||
+      !isfinite(s->yaw_total_deg) || !isfinite(s->pitch_deg) || !isfinite(s->roll_deg) ||
+      !isfinite(s->gyro_rad_s[0]) || !isfinite(s->gyro_rad_s[1]) || !isfinite(s->gyro_rad_s[2])) {
+    return GimbalAxis_RejectImu(axis, GIMBAL_AXIS_REASON_IMU_INVALID);
+  }
+  const float pitch_abs_deg = fabsf(s->pitch_deg);
+  if (pitch_abs_deg >= c->exit_pitch_deg ||
+      (axis->feedback_source == GIMBAL_AXIS_FEEDBACK_ENCODER && pitch_abs_deg > c->enter_pitch_deg)) {
+    return GimbalAxis_RejectImu(axis, GIMBAL_AXIS_REASON_IMU_SINGULAR);
+  }
+  if (axis->feedback_source == GIMBAL_AXIS_FEEDBACK_INERTIAL &&
+      s->reset_sequence != axis->imu_active_reset) {
+    return GimbalAxis_RejectImu(axis, GIMBAL_AXIS_REASON_IMU_RESET);
+  }
+
+  const float roll_rad = s->roll_deg * GIMBAL_AXIS_DEG_TO_RAD;
+  const float pitch_rad = s->pitch_deg * GIMBAL_AXIS_DEG_TO_RAD;
+  const float sin_roll = sinf(roll_rad), cos_roll = cosf(roll_rad);
+  const float rate_rad_s = c->axis == GIMBAL_AXIS_INERTIAL_YAW
+      ? (s->gyro_rad_s[1] * sin_roll + s->gyro_rad_s[2] * cos_roll) / cosf(pitch_rad)
+      : s->gyro_rad_s[1] * cos_roll - s->gyro_rad_s[2] * sin_roll;
+  const float angle_deg = c->axis == GIMBAL_AXIS_INERTIAL_YAW ? s->yaw_total_deg : s->pitch_deg;
+  feedback->angle_raw = angle_deg * GIMBAL_AXIS_RAW_PER_DEG * (float)c->feedback_sign;
+  feedback->speed_rpm = rate_rad_s * GIMBAL_AXIS_RAD_S_TO_RPM * (float)c->feedback_sign;
+  feedback->mechanical_angle_raw = axis->cycle.snapshot.feedback.angle_total_raw;
+  if (!isfinite(feedback->angle_raw) || !isfinite(feedback->speed_rpm)) {
+    return GimbalAxis_RejectImu(axis, GIMBAL_AXIS_REASON_IMU_INVALID);
+  }
+  if (axis->feedback_source == GIMBAL_AXIS_FEEDBACK_INERTIAL && !axis->fallback_pending) {
+    return true;
+  }
+  axis->cycle.reason = GIMBAL_AXIS_REASON_IMU_WAIT;
+  if (axis->fallback_pending) { return false; }
+  if (!axis->imu_qualifying || s->reset_sequence != axis->imu_candidate_reset) {
+    axis->imu_qualifying = true;
+    axis->imu_ready_start_ms = now_ms;
+    axis->imu_last_sequence = s->sequence;
+    axis->imu_candidate_reset = s->reset_sequence;
+    return false;
+  }
+  const bool sample_advanced = s->sequence != axis->imu_last_sequence;
+  axis->imu_last_sequence = s->sequence;
+  return sample_advanced && (uint32_t)(now_ms - axis->imu_ready_start_ms) >= c->ready_ms;
 }
 
 /* 清理旧积分和 Ramp，但保留最后目标；恢复后重新计算目标误差，不自动改位。 */
@@ -184,6 +277,7 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
     return;
   }
   axis->cycle = (GimbalAxis_OutputTypeDef){0};
+  axis->cycle.feedback_source = axis->feedback_source;
   (void)Gm6020_Process(&axis->motor, now_ms);
   axis->cycle.snapshot_valid =
       Gm6020_GetSnapshot(&axis->motor, &axis->cycle.snapshot);
@@ -194,6 +288,10 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
     axis->cycle.feedback_age_ms = GimbalAxis_FeedbackAge(
         now_ms, axis->cycle.snapshot.feedback.last_feedback_tick);
   }
+  const bool stabilization = axis->config.stabilization.enabled && !fixed_target;
+  GimbalControl_FeedbackTypeDef inertial_feedback = {0};
+  const bool inertial_ready = stabilization &&
+      GimbalAxis_ObserveImu(axis, now_ms, &inertial_feedback);
 
   if (!axis->cycle.snapshot_valid || !axis->cycle.snapshot.online ||
       axis->cycle.feedback_age_ms >= axis->config.motor.feedback_timeout_ms) {
@@ -237,6 +335,12 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
       (void)GimbalAxis_SendZero(axis);
       return;
     }
+    const GimbalControl_FeedbackTypeDef initial_feedback = {
+        .angle_raw = (float)axis->cycle.snapshot.feedback.angle_total_raw,
+        .speed_rpm = (float)axis->cycle.snapshot.feedback.speed_rpm,
+        .mechanical_angle_raw = axis->cycle.snapshot.feedback.angle_total_raw,
+    };
+    (void)GimbalControl_Reanchor(&axis->controller, &initial_feedback);
     axis->cycle.phase = GIMBAL_AXIS_PHASE_HOLD_POSITION;
     (void)GimbalAxis_SendZero(axis);
     return;
@@ -249,18 +353,55 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
     return;
   }
 
+  GimbalControl_FeedbackTypeDef feedback = {
+      .angle_raw = (float)axis->cycle.snapshot.feedback.angle_total_raw,
+      .speed_rpm = (float)axis->cycle.snapshot.feedback.speed_rpm,
+      .mechanical_angle_raw = axis->cycle.snapshot.feedback.angle_total_raw,
+  };
+  /* 参考切换只发生在状态边沿。范围外也锁住当前反馈，不能用 min/max 裁剪。
+   * CAN 恢复且 INS 参考连续时保留惯性目标；INS 失效则捕获机械角并暂停人工输入。
+   * 切换周期不积分输入，避免刚锁定就因旧命令发生目标跳变。 */
+  if (axis->fallback_pending || (!stabilization && axis->feedback_source == GIMBAL_AXIS_FEEDBACK_INERTIAL)) {
+    (void)GimbalControl_Reanchor(&axis->controller, &feedback);
+    axis->feedback_source = GIMBAL_AXIS_FEEDBACK_ENCODER;
+    axis->fallback_pending = false;
+    axis->imu_qualifying = false;
+    axis->cycle.input_inhibited = true;
+  } else if (stabilization && inertial_ready && axis->feedback_source == GIMBAL_AXIS_FEEDBACK_ENCODER) {
+    (void)GimbalControl_Reanchor(&axis->controller, &inertial_feedback);
+    axis->feedback_source = GIMBAL_AXIS_FEEDBACK_INERTIAL;
+    axis->imu_active_reset = axis->cycle.ins.reset_sequence;
+    axis->imu_qualifying = false;
+    axis->cycle.reason = GIMBAL_AXIS_REASON_NONE;
+    axis->cycle.input_inhibited = true;
+  }
+  if (stabilization && axis->feedback_source == GIMBAL_AXIS_FEEDBACK_INERTIAL) {
+    feedback = inertial_feedback;
+  } else if (stabilization) {
+    axis->cycle.input_inhibited = true;
+  }
+  axis->cycle.feedback_source = axis->feedback_source;
+  const Gimbal_CommandTypeDef hold_command = {
+      .enabled = true, .velocity_permille = 0.0f, .timestamp_ms = now_ms,
+  };
+  const Gimbal_CommandTypeDef *effective_command = axis->cycle.input_inhibited ? &hold_command : command;
   if (fixed_target) {
     (void)GimbalControl_SetTargetAngle(&axis->controller, target_angle_raw);
   }
-  GimbalControl_Update(&axis->controller, &axis->cycle.snapshot.feedback,
-                       command, (float)dt_ms / 1000.0f, &axis->cycle.control);
-  if (axis->cycle.limit == GM6020_LIMIT_MIN || axis->cycle.control.at_min_limit) {
-    axis->cycle.limit = GM6020_LIMIT_MIN;
+  GimbalControl_UpdateFeedback(&axis->controller, &feedback,
+      effective_command, (float)dt_ms / 1000.0f, &axis->cycle.control);
+  if (!axis->cycle.control.valid) {
+    GimbalAxis_ResetController(axis);
+    axis->cycle.reason = GIMBAL_AXIS_REASON_CONTROL_INVALID;
+    (void)GimbalAxis_SendZero(axis);
+    return;
+  }
+  if (axis->cycle.control.command_limited && effective_command->velocity_permille < 0.0f) {
     axis->cycle.reason = GIMBAL_AXIS_REASON_SOFT_MIN;
-  } else if (axis->cycle.limit == GM6020_LIMIT_MAX || axis->cycle.control.at_max_limit) {
-    axis->cycle.limit = GM6020_LIMIT_MAX;
+  } else if (axis->cycle.control.command_limited) {
     axis->cycle.reason = GIMBAL_AXIS_REASON_SOFT_MAX;
-  } else if (!command->enabled || command->velocity_permille == 0) {
+  } else if (axis->cycle.reason == GIMBAL_AXIS_REASON_NONE &&
+             (!effective_command->enabled || effective_command->velocity_permille == 0.0f)) {
     axis->cycle.reason = GIMBAL_AXIS_REASON_INPUT_HOLD;
   }
 
@@ -278,9 +419,9 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
     (void)GimbalAxis_SendZero(axis);
   }
 
-  if (axis->cycle.limit != GM6020_LIMIT_NONE) {
+  if (axis->cycle.control.command_limited) {
     axis->cycle.phase = GIMBAL_AXIS_PHASE_LIMIT_HOLD;
-  } else if (command->velocity_permille != 0) {
+  } else if (axis->cycle.control.accepted_command_speed_rpm != 0.0f) {
     axis->cycle.phase = GIMBAL_AXIS_PHASE_ACTIVE;
   } else {
     axis->cycle.phase = GIMBAL_AXIS_PHASE_HOLD_POSITION;
@@ -294,12 +435,14 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
  * @param now_ms HAL_GetTick 当前 ms；与反馈时间戳同源。
  * @param dt_ms 控制周期 ms；必须大于 0。
  * @retval None；周期输出写入 axis->cycle，反馈或参数失效时发零电流。
- * @note 仅所属任务调用。每周期只取一份反馈快照，不等待 CAN 发送完成。
+ * @note 仅所属任务调用。每周期各取一份 CAN/INS 快照，不等待 CAN 发送完成。
+ * 启用自稳时使用惯性角；IMU 未就绪/失效时捕获编码器保持并暂停人工输入。
  */
 void GimbalAxis_RunCycle(GimbalAxis_HandleTypeDef *axis,
                          const Gimbal_CommandTypeDef *command,
                          uint32_t now_ms, uint32_t dt_ms) {
-  /* 命令失效、超时或数值越界都等价于零速度保持；只有反馈失效才走零输出路径。 */
+  /* 命令失效或数值越界等价于零速度保持；超时由命令适配层处理。
+   * CAN、标定或参数失效仍发零；IMU 失效保持编码器位置。 */
   const Gimbal_CommandTypeDef hold_command = {
       .velocity_permille = 0, .enabled = true, .fixed_target = false,
       .timestamp_ms = now_ms};

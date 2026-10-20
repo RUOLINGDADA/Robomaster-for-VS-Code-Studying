@@ -12,6 +12,28 @@
 
 #include <stdint.h>
 
+/* 六轴反馈失效时保持当前机械角；恢复时锁住当时姿态，不追赶旧惯性目标。 */
+#ifndef YAW_STABILIZATION_ENABLE
+#define YAW_STABILIZATION_ENABLE 1U /* 惯性自稳开关，0/1；1自动进入，0使用原编码器正式控制。 */
+#endif
+#ifndef YAW_IMU_FEEDBACK_SIGN
+#define YAW_IMU_FEEDBACK_SIGN (-1) /* 惯性角及欧拉角速度到编码器方向的映射，±1；两者使用同一符号。 */
+#endif
+#ifndef YAW_IMU_READY_MS
+#define YAW_IMU_READY_MS 100U /* 连续有效窗口，HAL ms，须大于超时；增大延迟自动进入。 */
+#endif
+#ifndef YAW_IMU_TIMEOUT_MS
+#define YAW_IMU_TIMEOUT_MS 10U /* 陀螺/加计最大年龄，HAL ms，>0；过期退回编码器保持。 */
+#endif
+#ifndef YAW_IMU_EXIT_PITCH_DEG
+#define YAW_IMU_EXIT_PITCH_DEG 80.0f /* 绝对Pitch退出阈值，deg，(0,90)；避免欧拉速度奇异。 */
+#endif
+#ifndef YAW_IMU_ENTER_PITCH_DEG
+#define YAW_IMU_ENTER_PITCH_DEG 75.0f /* 重新进入的绝对Pitch上限，deg，低于退出阈值；形成迟滞。 */
+#endif
+
+_Static_assert(YAW_STABILIZATION_ENABLE <= 1U, "stabilization enable must be 0 or 1");
+
 #define YAW_HARDWARE_TEST_MODE_OFF 0U /* 正式控制模式，0；使用摇杆和鼠标命令。 */
 #define YAW_HARDWARE_TEST_MODE_CALIBRATION 1U /* 只读标定模式，1；手动移动并记录角度。 */
 #define YAW_HARDWARE_TEST_MODE_ANGLE_LOOP 2U /* 固定角度测试模式，2；验证位置保持时使用。 */

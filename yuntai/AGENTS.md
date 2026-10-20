@@ -2,6 +2,8 @@
 
 本文件适用于当前工作区及其子目录。实际 STM32 工程位于 `yuntai/`；修改工程前必须阅读 `yuntai/AGENTS.md` 和 `yuntai/doc/README.md`，并遵守其中的模块、硬件、注释和验证规则。
 
+默认交付最新源码，由用户在 VS Code 构建并烧录。固件生成、注释维护与旧文件清理的具体约束以 `yuntai/AGENTS.md` 为准。
+
 ## 本地技能
 
 已将 `C:/Users/zhoujinyuan/Desktop/skills` 中的 37 项技能安装到本工作区的 `.agents/skills/`，并同时安装到用户目录 `C:/Users/zhoujinyuan/.agents/skills/`。完整来源和安装目录见 `.agents/matt-pocock-skills-install.json`；使用说明见 `.agents/README.md`。

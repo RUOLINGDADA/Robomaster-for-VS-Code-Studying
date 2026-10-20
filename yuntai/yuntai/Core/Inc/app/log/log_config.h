@@ -4,6 +4,8 @@
  *
  * 只看一个电机时关闭其它电机分类。只看图表时关闭 TASK、TEST 和 DBUS_TEXT。
  * 日志过多时关闭分类，或增大对应任务的日志周期。改宏后重新编译并烧录。
+ * 磁标定时打开 LOG_INS_MAG_CALIBRATION_ENABLE；它独占日志分类，只输出 MotionCal 帧。
+ * 输入采集由 LOG_DBUS_TRACE_ENABLE 独占日志带宽；关闭后恢复其他分类配置。
  * 本文件不配置外设。USART3 只接收 DBUS。
  */
 #ifndef APP_LOG_CONFIG_H
@@ -27,6 +29,15 @@
 #ifndef LOG_CHASSIS_ENABLE
 #define LOG_CHASSIS_ENABLE 0U /* 底盘日志开关，0/1；与 TASK 同开，默认关闭以保留串口带宽。 */
 #endif
+#ifndef LOG_INS_ENABLE
+#define LOG_INS_ENABLE 1U /* 姿态状态日志，0/1；独立于TASK，当前开启1Hz六轴状态。 */
+#endif
+#ifndef LOG_INS_MAG_DIAGNOSTIC_ENABLE
+#define LOG_INS_MAG_DIAGNOSTIC_ENABLE 0U /* 磁航向诊断，0/1；当前六轴自稳关闭，1随正常INS日志附加磁场/四元数。 */
+#endif
+#ifndef LOG_INS_MAG_CALIBRATION_ENABLE
+#define LOG_INS_MAG_CALIBRATION_ENABLE 0U /* MotionCal模式，0/1；1需同时开启磁采集，仅输出Raw帧并暂停磁融合。 */
+#endif
 #ifndef LOG_TASK_ENABLE
 #define LOG_TASK_ENABLE 0U /* 正式任务日志总开关，0/1；与各电机开关同时开启才输出。 */
 #endif
@@ -35,6 +46,9 @@
 #endif
 #ifndef LOG_DBUS_TEXT_ENABLE
 #define LOG_DBUS_TEXT_ENABLE 0U /* DBUS 文本开关，0/1；输出原始数据和接收状态。 */
+#endif
+#ifndef LOG_DBUS_TRACE_ENABLE
+#define LOG_DBUS_TRACE_ENABLE 1U /* 输入逐帧采集，0/1；1独占日志分类，控制任务继续运行。 */
 #endif
 #ifndef LOG_DBUS_CHART_ENABLE
 #define LOG_DBUS_CHART_ENABLE 0U /* DBUS 图表开关，0/1；输出 10 通道 ch: 帧。 */
@@ -48,6 +62,9 @@ _Static_assert(LOG_SWITCH_VALID(LOG_GLOBAL_ENABLE) && LOG_SWITCH_VALID(LOG_USART
                LOG_SWITCH_VALID(LOG_YAW_ENABLE) && LOG_SWITCH_VALID(LOG_PITCH_ENABLE) &&
                LOG_SWITCH_VALID(LOG_FEED_MOTOR_ENABLE) && LOG_SWITCH_VALID(LOG_TASK_ENABLE) &&
                LOG_SWITCH_VALID(LOG_TEST_ENABLE) && LOG_SWITCH_VALID(LOG_DBUS_TEXT_ENABLE) &&
-               LOG_SWITCH_VALID(LOG_DBUS_CHART_ENABLE) && LOG_SWITCH_VALID(LOG_CHASSIS_ENABLE), "log switches must be 0 or 1");
+               LOG_SWITCH_VALID(LOG_DBUS_CHART_ENABLE) && LOG_SWITCH_VALID(LOG_CHASSIS_ENABLE) &&
+               LOG_SWITCH_VALID(LOG_DBUS_TRACE_ENABLE) &&
+               LOG_SWITCH_VALID(LOG_INS_ENABLE) && LOG_SWITCH_VALID(LOG_INS_MAG_CALIBRATION_ENABLE) &&
+               LOG_SWITCH_VALID(LOG_INS_MAG_DIAGNOSTIC_ENABLE), "log switches must be 0 or 1");
 
 #endif /* APP_LOG_CONFIG_H */

@@ -21,6 +21,8 @@
 #include "cmsis_os.h"
 #include "can.h"
 #include "dma.h"
+#include "i2c.h"
+#include "spi.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -98,6 +100,8 @@ int main(void)
   MX_USART3_UART_Init();
   MX_TIM1_Init();
   MX_CAN2_Init();
+  MX_SPI1_Init();
+  MX_I2C3_Init();
   /* USER CODE BEGIN 2 */
   /* STM32F407 双 CAN 共用过滤器：bank 0~13 留给底盘 CAN1，bank 14~27 属于云台 CAN2。
    * 掩码全零会接收所有帧；驱动再校验标准数据帧和 ID。只换 hcan 而保留 bank 0 会让 CAN2 收不到反馈。

@@ -44,6 +44,12 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    Core/Src/bsp/bmi088/bmi088.c
+    Core/Src/bsp/ist8310/ist8310.c
+    Core/Src/algorithm/ahrs/ahrs.c
+    Core/Src/app/ins/ins.c
+    Core/Src/task/task_ins/task_ins.c
+    Core/Src/task/task_ins/task_ins_runtime.c
     Core/Src/bsp/m3508_c620/m3508_c620.c
     Core/Src/app/chassis/chassis_control.c
     Core/Src/task/task_chassis/task_chassis.c
@@ -78,6 +84,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/task/task_pitch/task_pitch_runtime.c
     Core/Src/task/task_dbus/task_dbus.c
     Core/Src/task/task_dbus/task_dbus_runtime.c
+    Core/Src/task/task_dbus/task_dbus_trace.c
 )
 
 # Add include paths

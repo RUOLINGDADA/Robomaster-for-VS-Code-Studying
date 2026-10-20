@@ -18,6 +18,7 @@
 typedef struct {
   uint8_t bytes[DBUS_FRAME_LENGTH]; /* 已完成 DMA 块的副本。任务不持有 DMA 内存。 */
   uint32_t timestamp_ms; /* ISR 完整帧时刻，单位 HAL ms。任务转发不刷新接收时刻。 */
+  uint32_t timestamp_cycles; /* ISR 完整帧 DWT 周期计数；与 HAL ms 联合解释回绕。 */
   uint32_t epoch; /* 复制完成帧时的接收代数。失同步会改变，旧帧不能复活输入。 */
 } Dbus_FrameTypeDef;
 
@@ -87,7 +88,7 @@ bool Dbus_DecodeFrame(const uint8_t *b, Dbus_DataTypeDef *data) {
     }
   }
   /*
-   * 拨杆保留值 0 不控制本轮输出许可，接收器切换瞬间仍可保留摇杆输入。
+   * 拨杆保留值 0 不控制输出许可，接收器切换瞬间仍可保留摇杆输入。
    * 鼠标按键只接受协议 0/1；其它值拒绝整帧，防止错位数据触发发射。
    */
   if (decoded.mouse_left > 1U || decoded.mouse_right > 1U) {
@@ -138,6 +139,7 @@ static void Dbus_CopyCompleted(uint8_t index) {
   Dbus_FrameTypeDef *slot = &g_frame_mailbox[g_frame_mailbox_head];
   memcpy(slot->bytes, g_rx_buffers[index], DBUS_FRAME_LENGTH);
   slot->timestamp_ms = HAL_GetTick();
+  slot->timestamp_cycles = DWT->CYCCNT;
   slot->epoch = g_epoch;
   __DMB();
   g_frame_mailbox_head = next_head;
@@ -208,6 +210,9 @@ bool Dbus_Init(void) {
   if (g_active || g_restart_requested) {
     return true;
   }
+  /* 启用周期计数但不清零，避免破坏 INS 使用的同一 DWT 时间基准。 */
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
   /* 首次启动不知道线上的帧位置。先只等一段帧间空闲，不启动 DMA，避免把
    * 未对齐的 18 字节块当成输入；确认边界后再从下一帧的第一个字节开始计数。 */
   taskENTER_CRITICAL();
@@ -268,6 +273,11 @@ void Dbus_USART3_IRQHandler(void) {
  * @note 只由 DBUS 任务调用。HAL_DMA_Abort 的有界等待只发生在任务中。
  */
 void Dbus_Process(uint32_t now_ms) {
+  Dbus_ProcessObserved(now_ms, NULL);
+}
+
+/* 先提交真实输入，再在临界区外观察副本；日志缓冲不足不能影响控制接收。 */
+void Dbus_ProcessObserved(uint32_t now_ms, Dbus_FrameObserverTypeDef observer) {
   if (huart3.Instance == NULL || huart3.hdmarx == NULL ||
       huart3.hdmarx->Instance == NULL) {
     return;
@@ -304,6 +314,8 @@ void Dbus_Process(uint32_t now_ms) {
     }
     Dbus_DataTypeDef decoded;
     const bool valid = Dbus_DecodeFrame(frame.bytes, &decoded);
+    bool committed = false;
+    uint32_t sequence = 0U;
     taskENTER_CRITICAL();
     /* 解码期间 ISR 也可能故障。提交前再核对代数，旧帧不能重新宣告在线。 */
     if (frame.epoch == g_epoch && g_active && g_synchronized && !g_restart_requested) {
@@ -312,6 +324,8 @@ void Dbus_Process(uint32_t now_ms) {
         g_snapshot.timestamp_ms = frame.timestamp_ms;
         g_snapshot.valid = true;
         ++g_snapshot.valid_frames;
+        sequence = g_snapshot.valid_frames;
+        committed = true;
         g_snapshot.mouse_delta_x += decoded.mouse_x;
         g_snapshot.mouse_delta_y += decoded.mouse_y;
         ++g_snapshot.mouse_delta_frames;
@@ -321,6 +335,13 @@ void Dbus_Process(uint32_t now_ms) {
       }
     }
     taskEXIT_CRITICAL();
+    if (committed && observer != NULL) {
+      const Dbus_ReceivedFrameTypeDef received = {
+          .data = decoded, .timestamp_ms = frame.timestamp_ms,
+          .timestamp_cycles = frame.timestamp_cycles, .sequence = sequence,
+      };
+      observer(&received);
+    }
   }
 }
 

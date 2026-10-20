@@ -122,6 +122,13 @@ const osThreadAttr_t task_chassis_attributes = {
   .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityNormal2,
 };
+/* Definitions for task_ins */
+osThreadId_t task_insHandle;
+const osThreadAttr_t task_ins_attributes = {
+  .name = "task_ins",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityAboveNormal,
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -133,6 +140,7 @@ void task_yaw_entry(void *argument);
 void task_pitch_entry(void *argument);
 void task_dbus_entry(void *argument);
 void task_chassis_entry(void *argument);
+void task_ins_entry(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -177,6 +185,9 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of task_chassis */
   task_chassisHandle = osThreadNew(task_chassis_entry, NULL, &task_chassis_attributes);
+
+  /* creation of task_ins */
+  task_insHandle = osThreadNew(task_ins_entry, NULL, &task_ins_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -287,6 +298,24 @@ __weak void task_chassis_entry(void *argument)
     osDelay(1);
   }
   /* USER CODE END task_chassis_entry */
+}
+
+/* USER CODE BEGIN Header_task_ins_entry */
+/**
+* @brief Function implementing the task_ins thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_task_ins_entry */
+__weak void task_ins_entry(void *argument)
+{
+  /* USER CODE BEGIN task_ins_entry */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END task_ins_entry */
 }
 
 /* Private application code --------------------------------------------------*/

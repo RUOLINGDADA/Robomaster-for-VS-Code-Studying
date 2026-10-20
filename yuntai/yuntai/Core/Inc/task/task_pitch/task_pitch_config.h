@@ -10,6 +10,28 @@
 #ifndef TASK_PITCH_CONFIG_H
 #define TASK_PITCH_CONFIG_H /* 防止配置重复包含。 */
 
+/* 六轴反馈失效时保持当前机械角；恢复时锁住当时姿态，不追赶旧惯性目标。 */
+#ifndef PITCH_STABILIZATION_ENABLE
+#define PITCH_STABILIZATION_ENABLE 1U /* 惯性自稳开关，0/1；1自动进入，0使用原编码器正式控制。 */
+#endif
+#ifndef PITCH_IMU_FEEDBACK_SIGN
+#define PITCH_IMU_FEEDBACK_SIGN 1 /* 惯性角及欧拉角速度到编码器方向的映射，±1；两者使用同一符号。 */
+#endif
+#ifndef PITCH_IMU_READY_MS
+#define PITCH_IMU_READY_MS 100U /* 连续有效窗口，HAL ms，须大于超时；增大延迟自动进入。 */
+#endif
+#ifndef PITCH_IMU_TIMEOUT_MS
+#define PITCH_IMU_TIMEOUT_MS 10U /* 陀螺/加计最大年龄，HAL ms，>0；过期退回编码器保持。 */
+#endif
+#ifndef PITCH_IMU_EXIT_PITCH_DEG
+#define PITCH_IMU_EXIT_PITCH_DEG 80.0f /* 绝对Pitch退出阈值，deg，(0,90)；避免欧拉速度奇异。 */
+#endif
+#ifndef PITCH_IMU_ENTER_PITCH_DEG
+#define PITCH_IMU_ENTER_PITCH_DEG 75.0f /* 重新进入的绝对Pitch上限，deg，低于退出阈值；形成迟滞。 */
+#endif
+
+_Static_assert(PITCH_STABILIZATION_ENABLE <= 1U, "stabilization enable must be 0 or 1");
+
 #define PITCH_HARDWARE_TEST_MODE_OFF 0U /* 正式控制模式，0；使用摇杆和鼠标命令。 */
 #define PITCH_HARDWARE_TEST_MODE_CALIBRATION 1U /* 只读标定模式，1；手动移动并记录角度。 */
 #define PITCH_HARDWARE_TEST_MODE_ANGLE_LOOP 2U /* 固定角度测试模式，2；验证位置保持时使用。 */
@@ -23,7 +45,7 @@
 #define PITCH_TASK_LOG_PERIOD_MS 500U /* 诊断周期，ms；串口刷屏时增大。 */
 #define PITCH_FEEDBACK_TIMEOUT_MS 100U /* 反馈期限，HAL ms；增大会延迟掉线清零。 */
 #define PITCH_CALIBRATION_CENTER_ANGLE_RAW 8753 /* 中位连续角度，count；重新标定后填写。 */
-#define PITCH_CALIBRATION_MIN_ANGLE_RAW 8136 /* 软件下界，连续 count；按实测边界设置并保留余量。 */
+#define PITCH_CALIBRATION_MIN_ANGLE_RAW 8136 /* 人工软件下界，连续 count；只过滤向下人工增量，不裁剪自稳纠偏。 */
 #define PITCH_CALIBRATION_MAX_ANGLE_RAW 9350 /* 软件上界，连续 count；按实测边界设置并保留余量。 */
 #define PITCH_MOTOR_CURRENT_SIGN 1 /* 闭环电流方向，+1/-1；正误差驱动反向时核对。 */
 #define PITCH_FEEDBACK_SPEED_SIGN 1 /* 反馈速度方向，+1/-1；与连续角度增量同向。 */
@@ -38,12 +60,12 @@
 
 #define PITCH_MAX_SPEED_TARGET_RPM 70.0f /* 速度目标上限，rpm；过快时降低，饱和时先检查此项。 */
 
-#define PITCH_POSITION_KP_RPM_PER_RAW 0.05f /* 位置 P，rpm/count；响应慢时增加，过冲时降低。 */
-#define PITCH_POSITION_KI_RPM_PER_RAW_S 2.0f /* 位置 I，rpm/(count·s)；持续静差时增加，摆动时降低。 */
+#define PITCH_POSITION_KP_RPM_PER_RAW 0.01f /* 位置 P，rpm/count；响应慢时增加，过冲时降低。 */
+#define PITCH_POSITION_KI_RPM_PER_RAW_S 0.1f /* 位置 I，rpm/(count·s)；持续静差时增加，摆动时降低。 */
 #define PITCH_POSITION_INTEGRAL_LIMIT_RPM 5.0f /* 位置积分上限，rpm，0~MAX_SPEED_TARGET；过冲时降低。 */
 #define PITCH_POSITION_KD_RPM_S_PER_RAW 0.0f /* 位置 D，rpm·s/count；增加制动，过大会放大噪声。 */
 #define PITCH_SPEED_KP_CURRENT_PER_RPM 200.0f /* 速度 P，raw/rpm；跟随慢时增加，测速噪声大时降低。 */
-#define PITCH_SPEED_KI_CURRENT_PER_RPM_S 20.0f /* 速度 I，raw/(rpm·s)；持续速度静差时增加，摆动时降低。 */
+#define PITCH_SPEED_KI_CURRENT_PER_RPM_S 50.0f /* 速度 I，raw/(rpm·s)；持续速度静差时增加，摆动时降低。 */
 #define PITCH_MAX_CURRENT_RAW 7000.0f /* 总电流上限，GM6020 raw，(0,16384]；增大会提高力矩和温升。 */
 #define PITCH_SPEED_KD_CURRENT_S_PER_RPM 0.0f /* 速度 D，raw·s/rpm；测速跳变造成冲击时降低。 */
 #define PITCH_SPEED_INTEGRAL_LIMIT_RAW PITCH_MAX_CURRENT_RAW /* 速度积分上限，raw，0~MAX_CURRENT；恢复冲击大时降低。 */

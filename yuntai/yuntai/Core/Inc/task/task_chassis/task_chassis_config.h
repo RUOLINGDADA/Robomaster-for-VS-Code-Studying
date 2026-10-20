@@ -36,7 +36,7 @@
 #define CHASSIS_SPEED_KP 4.0f /* 比例增益，raw/rpm，>=0；误差约 1229 rpm 时单 P 饱和。 */
 #endif
 #ifndef CHASSIS_SPEED_KI
-#define CHASSIS_SPEED_KI 2.0f /* 积分增益，raw/(rpm*s)，>=0；本轮不重新整定。 */
+#define CHASSIS_SPEED_KI 2.0f /* 积分增益，raw/(rpm*s)，>=0；增大会加快消除稳态速度误差。 */
 #endif
 #ifndef CHASSIS_SPEED_KD
 #define CHASSIS_SPEED_KD 0.0f /* 微分增益，raw*s/rpm，>=0；默认关闭，尚未验证噪声。 */

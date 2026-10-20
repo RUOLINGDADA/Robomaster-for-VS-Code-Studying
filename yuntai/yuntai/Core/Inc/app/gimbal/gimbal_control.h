@@ -3,7 +3,7 @@
  * @brief 云台角度环、速度 PID、重力补偿与电流 Ramp。
  *
  * 角度使用连续 count，速度使用 rpm，输出使用 GM6020 电流原始值。
- * 每轴由所属任务独占实例。输入反馈必须来自同一份 CAN 快照。
+ * 每轴由所属任务独占实例。机械反馈与惯性反馈各来自本周期唯一快照。
  * 本模块只计算输出，不发送 CAN，不检查反馈年龄或配置合法性。
  * 运行时先检查安全门；边界只过滤向外命令，反向命令仍可离开边界。
  */
@@ -48,7 +48,7 @@ typedef struct {
   LowPassFilter_HandleTypeDef speed_filter; /* 实测速度滤波状态（先去掉测速毛刺）。 */
   GravityCompensation_HandleTypeDef gravity_compensation; /* 重力算法状态；每轴独占。 */
   GimbalControl_ConfigTypeDef config; /* 初始化时复制的控制参数（不保存外部配置指针）。 */
-  float target_angle_raw; /* 当前保持目标，单位连续编码器计数（松手后云台要停在这里）。 */
+  float target_angle_raw; /* 当前反馈参考系中的保持目标，等效 count；惯性目标不是机械角。 */
   float position_integral_rpm; /* 位置环积分历史，单位 rpm（每轴独立，反馈恢复时清零，不改最后目标）。 */
   float target_speed_rpm; /* 上一次计算出的速度目标，单位 rpm（角度环给速度环的目标）。 */
   int32_t center_angle_raw; /* 控制器保存的标定中心，单位连续计数（用于诊断和重置）。 */
@@ -56,14 +56,25 @@ typedef struct {
 } GimbalControl_HandleTypeDef;
 
 typedef struct {
-  int32_t target_angle_raw; /* 本周期目标连续角度，单位编码器计数（位置环希望到达的位置）。 */
-  int32_t angle_error_raw; /* 目标减实际角度误差，单位编码器计数（正负决定纠偏方向）。 */
+  float angle_raw; /* 当前控制参考系角度，等效 count；与保存目标同系同方向。 */
+  float speed_rpm; /* 同一参考系角速度，rpm；惯性模式由陀螺换算。 */
+  int32_t mechanical_angle_raw; /* 本周期编码器连续 count，仅用于人工命令限位和重力补偿。 */
+} GimbalControl_FeedbackTypeDef;
+
+typedef struct {
+  int32_t target_angle_raw; /* 本周期目标等效 count，诊断整数饱和；惯性模式不是机械角。 */
+  int32_t angle_error_raw; /* 本周期目标减控制反馈，等效 count，诊断整数饱和。 */
+  float feedback_angle_raw; /* 本周期实际控制角度，等效 count。 */
+  float feedback_speed_rpm; /* 本周期实际控制速度，rpm，滤波前。 */
+  float accepted_command_speed_rpm; /* 人工命令过滤后的速度，rpm；积分和前馈共用。 */
   float target_speed_rpm; /* 本周期速度目标，单位 rpm（送入速度环）。 */
   int16_t speed_loop_current_raw; /* 位置/速度环输出，未叠加重力补偿，单位原始电流。 */
   int16_t gravity_compensation_current_raw; /* 本周期重力补偿分量，单位原始电流。 */
   int16_t target_current_raw; /* 本周期电流目标，GM6020 原始值（驱动反馈新鲜度门之前的控制结果）。 */
   bool at_min_limit; /* true 表示反馈已到达/越过软件最小边界（遥控外向意图会被过滤）。 */
   bool at_max_limit; /* true 表示反馈已到达/越过软件最大边界（遥控外向意图会被过滤）。 */
+  bool command_limited; /* 仅表示本周期人工命令被限制，不改变闭环输出许可。 */
+  bool valid; /* 全部计算有限且已完成；false 时运行时必须发送零电流。 */
 } GimbalControl_OutputTypeDef;
 
 /**
@@ -85,6 +96,32 @@ void GimbalControl_Init(GimbalControl_HandleTypeDef *controller,
  * @retval None 输出结果写入对象或参数，函数无返回值。
  */
 void GimbalControl_ResetHistory(GimbalControl_HandleTypeDef *controller);
+
+/**
+ * @brief 切换反馈参考系，锁住传入角度，清积分并用真实速度初始化滤波。
+ * @param controller 已初始化且由所属任务独占的控制器。
+ * @param feedback 新参考系的同周期反馈；角度为等效 count，速度为 rpm。
+ * @retval true 已切换；false 参数非法，原状态不变。
+ * @note 仅任务调用；保留电流 Ramp，目标允许处于机械范围外。
+ */
+bool GimbalControl_Reanchor(GimbalControl_HandleTypeDef *controller,
+                            const GimbalControl_FeedbackTypeDef *feedback);
+
+/**
+ * @brief 用分离的惯性/机械反馈计算闭环；机械范围只约束人工目标增量和前馈。
+ * @param controller 所属任务独占的控制器。
+ * @param feedback 本周期控制反馈及机械编码器角度；不能混用不同周期的数据。
+ * @param command 已检查超时的人工速度，固定机械角测试传 fixed_target=true。
+ * @param dt_s 控制周期，s，必须有限且大于 0。
+ * @param output 本周期结果；非法计算时 valid=false、目标电流为 0。
+ * @retval None；不发送 CAN，不重新取快照。
+ * @note 零输入与扰动不能修改保存目标；自动纠偏不使用机械范围裁剪。
+ */
+void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
+                                  const GimbalControl_FeedbackTypeDef *feedback,
+                                  const Gimbal_CommandTypeDef *command,
+                                  float dt_s,
+                                  GimbalControl_OutputTypeDef *output);
 
 /**
  * @brief  设置一个固定保持目标，不改变 PID、Ramp 和滤波历史（测试角度环时使用）。

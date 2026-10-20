@@ -46,6 +46,15 @@ bool YawTask_RuntimeInit(YawTask_RuntimeTypeDef *runtime) {
           .min_angle_raw = YAW_CALIBRATION_MIN_ANGLE_RAW,
           .max_angle_raw = YAW_CALIBRATION_MAX_ANGLE_RAW,
       },
+      .stabilization = {
+          .enabled = YAW_STABILIZATION_ENABLE != 0U,
+          .axis = GIMBAL_AXIS_INERTIAL_YAW,
+          .feedback_sign = YAW_IMU_FEEDBACK_SIGN,
+          .ready_ms = YAW_IMU_READY_MS,
+          .timeout_ms = YAW_IMU_TIMEOUT_MS,
+          .exit_pitch_deg = YAW_IMU_EXIT_PITCH_DEG,
+          .enter_pitch_deg = YAW_IMU_ENTER_PITCH_DEG,
+      },
       /* 从本轴配置复制位置环、速度环、限幅、Ramp 和滤波参数，正式/测试共用。
        * 输入满量程速度、位置环速度上限与总电流上限是三个不同约束，不能相互代替。 */
       .control = {

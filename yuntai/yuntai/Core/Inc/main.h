@@ -80,6 +80,27 @@ extern volatile HardFaultContextTypeDef g_hardfault_context;
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define SPI_MISO_Pin GPIO_PIN_4
+#define SPI_MISO_GPIO_Port GPIOB
+#define SPI1_CLK_Pin GPIO_PIN_3
+#define SPI1_CLK_GPIO_Port GPIOB
+#define RSTN_IST8310_Pin GPIO_PIN_6
+#define RSTN_IST8310_GPIO_Port GPIOG
+#define DRDY_IST8310_Pin GPIO_PIN_3
+#define DRDY_IST8310_GPIO_Port GPIOG
+#define DRDY_IST8310_EXTI_IRQn EXTI3_IRQn
+#define CS1_Accel_Pin GPIO_PIN_4
+#define CS1_Accel_GPIO_Port GPIOA
+#define INT1_Accel_Pin GPIO_PIN_4
+#define INT1_Accel_GPIO_Port GPIOC
+#define INT1_Accel_EXTI_IRQn EXTI4_IRQn
+#define INT1_Gyro_Pin GPIO_PIN_5
+#define INT1_Gyro_GPIO_Port GPIOC
+#define INT1_Gyro_EXTI_IRQn EXTI9_5_IRQn
+#define SPI1_MOSI_Pin GPIO_PIN_7
+#define SPI1_MOSI_GPIO_Port GPIOA
+#define CS1_Gyro_Pin GPIO_PIN_0
+#define CS1_Gyro_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

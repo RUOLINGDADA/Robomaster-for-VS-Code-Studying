@@ -55,12 +55,12 @@ void MX_USART1_UART_Init(void)
   }
   /* USER CODE BEGIN USART1_Init 2 */
   /* .ioc 保存日志波特率；重新生成前也从用户区应用，避免修改 CubeMX 生成区。 */
-  if (huart1.Init.BaudRate != 921600U) {
-    huart1.Init.BaudRate = 921600U;
-    if (HAL_UART_Init(&huart1) != HAL_OK) {
-      Error_Handler();
-    }
-  }
+  // if (huart1.Init.BaudRate != 921600U) {
+  //   huart1.Init.BaudRate = 921600U;
+  //   if (HAL_UART_Init(&huart1) != HAL_OK) {
+  //     Error_Handler();
+  //   }
+  // }
   /* USER CODE END USART1_Init 2 */
 
 }

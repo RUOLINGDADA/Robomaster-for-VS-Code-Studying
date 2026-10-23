@@ -29,7 +29,7 @@
 #endif
 
 #ifndef DBUS_YAW_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT
-#define DBUS_YAW_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT 0.5f /* Yaw 参考周期增益，‰/count，有限非负数；增大会提高灵敏度。 */
+#define DBUS_YAW_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT 5.0f /* Yaw 参考周期增益，‰/count，有限非负数；增大会提高灵敏度。 */
 #endif
 #ifndef DBUS_YAW_MOUSE_VIRTUAL_HOLD_MS
 #define DBUS_YAW_MOUSE_VIRTUAL_HOLD_MS 14U /* Yaw 缺帧保持，ms，可为 0；过小会在正常帧间提前降速。 */
@@ -42,7 +42,7 @@
 #endif
 
 #ifndef DBUS_PITCH_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT
-#define DBUS_PITCH_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT 0.5f /* Pitch 参考周期增益，‰/count，有限非负数；增大会提高灵敏度。 */
+#define DBUS_PITCH_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT 5.0f /* Pitch 参考周期增益，‰/count，有限非负数；增大会提高灵敏度。 */
 #endif
 #ifndef DBUS_PITCH_MOUSE_VIRTUAL_HOLD_MS
 #define DBUS_PITCH_MOUSE_VIRTUAL_HOLD_MS 14U /* Pitch 缺帧保持，ms，可为 0；过小会在正常帧间提前降速。 */
@@ -58,7 +58,7 @@
 #define DBUS_MOUSE_VIRTUAL_ENABLE 1U /* 虚拟鼠标总开关，0/1；异常时可关闭鼠标控制。 */
 #endif
 #ifndef DBUS_MOUSE_VIRTUAL_OUTPUT_LIMIT_PERMILLE
-#define DBUS_MOUSE_VIRTUAL_OUTPUT_LIMIT_PERMILLE 100 /* 鼠标上限，1~1000‰；两轴满输入40rpm时仅鼠标目标速度限为4rpm。 */
+#define DBUS_MOUSE_VIRTUAL_OUTPUT_LIMIT_PERMILLE 300 /* 鼠标上限，1~1000‰；两轴满输入40rpm时鼠标目标速度最高12rpm。 */
 #endif
 
 _Static_assert(DBUS_MOUSE_VIRTUAL_ENABLE == 0U || DBUS_MOUSE_VIRTUAL_ENABLE == 1U,

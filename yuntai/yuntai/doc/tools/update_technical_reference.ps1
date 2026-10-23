@@ -27,6 +27,7 @@ function Get-MaskedSource([string]$source) {
 }
 function Get-Mechanism([string]$name) {
   switch -Regex ($name) {
+    '^YAW_BOUNDARY_YIELD_ENABLE$' { return '无量纲0/1，默认1；正式Yaw在编码器边界丢弃不可达向外误差、清向外积分并在Ramp后禁止向外电流及同步历史。0只限制人工增量/前馈；固定机械角测试始终关闭让步，不改变IMU连续航向。' }
     '_H$' { return '包含保护：避免同一翻译单元重复声明，没有控制算法。' }
     '^INS_MAG_ENABLE$' { return '0/1磁采集总门；0跳过IST事务、DRDY通知及I2C/IST中断硬件检查，并强制有效磁融合许可为0，保留标定参数。MotionCal须同时开采集。' }
     '^(YAW|PITCH)_STABILIZATION_ENABLE$' { return '0/1正式反馈选择；1使用六轴惯性姿态，未就绪/无效则捕获编码器保持并暂停人工输入；固定机械角测试始终绕过INS。' }
@@ -85,10 +86,11 @@ function Get-Mechanism([string]$name) {
     'GRAVITY.*ENABLE' { return '补偿开关，关闭返回0；禁用模型也校验参数。' }
     'GRAVITY.*COUNTS_PER_REV' { return '补偿角差int64求差后按8192取余，不改写控制目标。' }
     'GRAVITY.*CURRENT_SIGN' { return '补偿在控制器坐标中的方向；合成后仍乘最终轴电流方向。' }
-    'MOUSE.*GAIN' { return '新帧：v←clamp(v+相对位移×浮点增益)，单位‰/count，小数保留；增益分别取各轴配置，增大会提高鼠标灵敏度。' }
-    'MOUSE.*HOLD' { return '本轴最后非零事件后保持H毫秒，零位移和另一轴输入不续期。' }
+    'MOUSE.*REFERENCE_PERIOD' { return 'ms；位移测速的增益参考周期，v=clamp(本批位移×增益×参考周期/接收时间差)。首帧或同毫秒帧用该周期作分母。' }
+    'MOUSE.*GAIN' { return '参考周期下的‰/count增益；新帧按位移×增益×参考周期/接收时间差替换速度，不累计旧速度，小数保留。增大会提高灵敏度和触顶概率。' }
+    'MOUSE.*HOLD' { return '无新帧时从本轴最后非零接收时刻保持H毫秒；新零位移帧直接清本轴，另一轴不续期。' }
     'MOUSE.*DECAY' { return '回中v=v0×(D−(age−H))/D；age≥H+D归零。' }
-    'MOUSE.*OUTPUT_LIMIT' { return '虚拟鼠标单独限幅±L‰，当前100；满输入40 rpm时鼠标目标速度最高4 rpm。摇杆合成后再限幅±1000‰，不限制闭环纠偏。' }
+    'MOUSE.*OUTPUT_LIMIT' { return '鼠标分量单独限幅±L‰；目标角速度上限为L/1000×轴满输入rpm×6，单位deg/s。摇杆合成后再限幅±1000‰，不限制闭环纠偏。' }
     'FEED_MOTOR_CURRENT_SIGN' { return '供弹协议电流=sign(STEP_COUNTS)×FEED_CURRENT_RAW×CURRENT_SIGN；本符号取±1，不能代替步长方向。' }
     'SIGN' { return '方向映射±1；输入、反馈和电流独立。C615只记录方向，不用PWM切换正反转。' }
     'STEP_COUNTS' { return '每次供弹的电机转子连续count增量；目标加法先检查int64边界，符号决定目标比较和逻辑电流方向；等长位移提供反向反馈兜底。' }
@@ -245,7 +247,9 @@ $snippets=@(
  @('Core/Src/algorithm/filter/low_pass_filter.c','LowPassFilter_Update','速度反馈低通。'),
  @('Core/Src/algorithm/gravity_compensation/gravity_compensation.c','GravityCompensation_Update','int64角差、周期取模和余弦补偿。'),
  @('Core/Src/app/gimbal/gimbal_control.c','GimbalControl_Reanchor','反馈切换边沿捕获当前角，允许机械范围外；清积分、初始化速度滤波并保留电流Ramp。'),
- @('Core/Src/app/gimbal/gimbal_control.c','GimbalControl_UpdateFeedback','只过滤本次人工增量及对应前馈；分离惯性反馈和机械补偿，不裁剪自动纠偏。'),
+ @('Core/Src/app/gimbal/gimbal_control.c','GimbalControl_IsOutward','编码器方向下的单向边界判断；逻辑电流方向门必须早于电机符号转换。'),
+ @('Core/Src/app/gimbal/gimbal_control.c','GimbalControl_ClearOutwardIntegrals','机械饱和时清两级向外积分，保留向内积分。'),
+ @('Core/Src/app/gimbal/gimbal_control.c','GimbalControl_UpdateFeedback','按轴配置先让步不可达目标再积分人工增量，运行级联PID/补偿/Ramp，最后限制向外电流并同步历史；Pitch和固定目标不启用让步。'),
  @('Core/Src/app/gimbal/gimbal_control.c','GimbalControl_Update','机械反馈适配入口，转成分离反馈后调用同一正式控制器。'),
  @('Core/Src/app/gimbal/gimbal_axis.c','GimbalAxis_CheckStabilization','自稳配置合法性，方向、资格/新鲜度时间及Pitch迟滞范围。'),
  @('Core/Src/app/gimbal/gimbal_axis.c','GimbalAxis_ObserveImu','一次INS快照、重置/新鲜度/连续更新资格和奇异区迟滞，ZYX角速度投影及等效count/rpm换算。'),

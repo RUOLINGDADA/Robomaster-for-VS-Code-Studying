@@ -58,6 +58,7 @@ bool YawTask_RuntimeInit(YawTask_RuntimeTypeDef *runtime) {
       /* 从本轴配置复制位置环、速度环、限幅、Ramp 和滤波参数，正式/测试共用。
        * 输入满量程速度、位置环速度上限与总电流上限是三个不同约束，不能相互代替。 */
       .control = {
+          .boundary_yield_enabled = YAW_BOUNDARY_YIELD_ENABLE != 0U,
           .max_command_speed_rpm = YAW_MAX_COMMAND_SPEED_RPM, /* ±1000‰ 输入到命令 rpm；决定目标角度移动速度。 */
           .max_speed_target_rpm = YAW_MAX_SPEED_TARGET_RPM, /* 位置控制产生的 rpm 上限，不等于输入满量程。 */
           .position_kp_rpm_per_raw = YAW_POSITION_KP_RPM_PER_RAW, /* 连续 count 误差到 rpm 的比例，不用角度 deg 增益。 */

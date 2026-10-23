@@ -388,6 +388,9 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
   if (fixed_target) {
     (void)GimbalControl_SetTargetAngle(&axis->controller, target_angle_raw);
   }
+  /* 固定角度调参不采用正式边界让步；编码器降级仍沿用本轴正式策略。 */
+  axis->controller.config.boundary_yield_enabled =
+      axis->config.control.boundary_yield_enabled && !fixed_target;
   GimbalControl_UpdateFeedback(&axis->controller, &feedback,
       effective_command, (float)dt_ms / 1000.0f, &axis->cycle.control);
   if (!axis->cycle.control.valid) {
@@ -419,7 +422,8 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
     (void)GimbalAxis_SendZero(axis);
   }
 
-  if (axis->cycle.control.command_limited) {
+  if (axis->cycle.control.command_limited || axis->cycle.control.target_yielded ||
+      axis->cycle.control.outward_current_limited) {
     axis->cycle.phase = GIMBAL_AXIS_PHASE_LIMIT_HOLD;
   } else if (axis->cycle.control.accepted_command_speed_rpm != 0.0f) {
     axis->cycle.phase = GIMBAL_AXIS_PHASE_ACTIVE;

@@ -5,7 +5,7 @@
  * 角度使用连续 count，速度使用 rpm，输出使用 GM6020 电流原始值。
  * 每轴由所属任务独占实例。机械反馈与惯性反馈各来自本周期唯一快照。
  * 本模块只计算输出，不发送 CAN，不检查反馈年龄或配置合法性。
- * 运行时先检查安全门；边界只过滤向外命令，反向命令仍可离开边界。
+ * 运行时先检查安全门；可选边界让步丢弃不可达目标并禁止向外电流。
  */
 
 #ifndef GIMBAL_CONTROL_H
@@ -25,6 +25,7 @@ typedef struct {
   int32_t center_angle_raw; /* 标定中心连续角度，单位编码器计数（位置目标围绕它定义）。 */
   int32_t min_angle_raw; /* 允许的连续角度下限，单位编码器计数（软件安全边界）。 */
   int32_t max_angle_raw; /* 允许的连续角度上限，单位编码器计数（必须大于下限）。 */
+  bool boundary_yield_enabled; /* 正式控制的边界让步及向外电流限制；固定目标测试不启用。 */
   float max_command_speed_rpm; /* 相对命令满量程对应速度，单位 rpm（输入满杆最多有多快）。 */
   float max_speed_target_rpm; /* 角度环输出速度上限，单位 rpm（位置误差不能让速度超过此值）。 */
   float position_kp_rpm_per_raw; /* 角度环比例增益，单位 rpm/计数（角度差越大，速度目标越大）。 */
@@ -52,13 +53,14 @@ typedef struct {
   float position_integral_rpm; /* 位置环积分历史，单位 rpm（每轴独立，反馈恢复时清零，不改最后目标）。 */
   float target_speed_rpm; /* 上一次计算出的速度目标，单位 rpm（角度环给速度环的目标）。 */
   int32_t center_angle_raw; /* 控制器保存的标定中心，单位连续计数（用于诊断和重置）。 */
+  int8_t boundary_state; /* 上周期有效让步边界：-1 下界、0 内部或禁用、+1 上界；所属任务更新。 */
   bool initialized; /* true 表示 PID、Ramp 和滤波器已初始化（可以开始计算）。 */
 } GimbalControl_HandleTypeDef;
 
 typedef struct {
   float angle_raw; /* 当前控制参考系角度，等效 count；与保存目标同系同方向。 */
   float speed_rpm; /* 同一参考系角速度，rpm；惯性模式由陀螺换算。 */
-  int32_t mechanical_angle_raw; /* 本周期编码器连续 count，仅用于人工命令限位和重力补偿。 */
+  int32_t mechanical_angle_raw; /* 本周期编码器连续 count，用于人工限位、可选边界让步及重力补偿。 */
 } GimbalControl_FeedbackTypeDef;
 
 typedef struct {
@@ -74,6 +76,8 @@ typedef struct {
   bool at_min_limit; /* true 表示反馈已到达/越过软件最小边界（遥控外向意图会被过滤）。 */
   bool at_max_limit; /* true 表示反馈已到达/越过软件最大边界（遥控外向意图会被过滤）。 */
   bool command_limited; /* 仅表示本周期人工命令被限制，不改变闭环输出许可。 */
+  bool target_yielded; /* 本周期丢弃边界外的不可达目标误差；不修改 IMU 航向。 */
+  bool outward_current_limited; /* 本周期 Ramp 后的向外逻辑电流被置零；向内电流仍允许。 */
   bool valid; /* 全部计算有限且已完成；false 时运行时必须发送零电流。 */
 } GimbalControl_OutputTypeDef;
 
@@ -108,14 +112,14 @@ bool GimbalControl_Reanchor(GimbalControl_HandleTypeDef *controller,
                             const GimbalControl_FeedbackTypeDef *feedback);
 
 /**
- * @brief 用分离的惯性/机械反馈计算闭环；机械范围只约束人工目标增量和前馈。
+ * @brief 用分离的惯性/机械反馈计算闭环，按配置执行人工限位和边界让步。
  * @param controller 所属任务独占的控制器。
  * @param feedback 本周期控制反馈及机械编码器角度；不能混用不同周期的数据。
  * @param command 已检查超时的人工速度，固定机械角测试传 fixed_target=true。
  * @param dt_s 控制周期，s，必须有限且大于 0。
  * @param output 本周期结果；非法计算时 valid=false、目标电流为 0。
  * @retval None；不发送 CAN，不重新取快照。
- * @note 零输入与扰动不能修改保存目标；自动纠偏不使用机械范围裁剪。
+ * @note 未启用让步或使用固定目标时，边界只约束人工增量和前馈；启用后边界可重定位向外目标并拒绝向外电流。
  */
 void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
                                   const GimbalControl_FeedbackTypeDef *feedback,

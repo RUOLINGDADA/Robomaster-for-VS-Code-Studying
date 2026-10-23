@@ -29,7 +29,7 @@ static inline int32_t GimbalLog_Scaled(float value, float scale) {
 
 /* 控制角属于标出的反馈参考系；机械编码器单独显示，不能混作惯性姿态误差。 */
 #define GIMBAL_LOG_FORMAT \
-  "[%s] 反馈=%s 阶段=%s 原因=%s 命令百分之一‰=%ld 人工受限=%u 输入暂停=%u " \
+  "[%s] 反馈=%s 阶段=%s 原因=%s 命令百分之一‰=%ld 人工受限=%u 目标让步=%u 向外电流受限=%u 输入暂停=%u " \
   "目标/实际控制角毫度=%ld/%ld 误差等效count=%ld 编码器count=%ld " \
   "目标/控制反馈速度百分之一rpm=%ld/%ld 编码器rpm=%d " \
   "速度环/补偿/目标/提交/反馈电流=%d/%d/%d/%d/%d 输出许可=%u CAN提交=%u " \
@@ -40,7 +40,9 @@ static inline int32_t GimbalLog_Scaled(float value, float scale) {
   label, GimbalAxis_FeedbackName((axis)->cycle.feedback_source), \
   GimbalAxis_PhaseName((axis)->cycle.phase), GimbalAxis_ReasonName((axis)->cycle.reason), \
   (long)GimbalLog_Scaled((command_permille), 100.0f), \
-  (axis)->cycle.control.command_limited ? 1U : 0U, (axis)->cycle.input_inhibited ? 1U : 0U, \
+  (axis)->cycle.control.command_limited ? 1U : 0U, \
+  (axis)->cycle.control.target_yielded ? 1U : 0U, \
+  (axis)->cycle.control.outward_current_limited ? 1U : 0U, (axis)->cycle.input_inhibited ? 1U : 0U, \
   (long)GimbalLog_Scaled((float)(axis)->cycle.control.target_angle_raw, 360000.0f / GM6020_ENCODER_COUNTS_PER_REV), \
   (long)GimbalLog_Scaled((axis)->cycle.control.feedback_angle_raw, 360000.0f / GM6020_ENCODER_COUNTS_PER_REV), \
   (long)(axis)->cycle.control.angle_error_raw, (long)(axis)->cycle.snapshot.feedback.angle_total_raw, \

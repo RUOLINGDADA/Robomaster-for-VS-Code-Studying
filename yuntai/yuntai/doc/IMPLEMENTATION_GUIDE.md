@@ -1651,7 +1651,7 @@ float GravityCompensation_Update(
 
 反馈切换边沿捕获当前角，允许机械范围外；清积分、初始化速度滤波并保留电流Ramp。
 
-源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 102 行。
+源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 120 行。
 
 ```c
 bool GimbalControl_Reanchor(GimbalControl_HandleTypeDef *controller,
@@ -1665,15 +1665,47 @@ bool GimbalControl_Reanchor(GimbalControl_HandleTypeDef *controller,
   controller->target_speed_rpm = 0.0f;
   Pid_Reset(&controller->speed_pid);
   LowPassFilter_Reset(&controller->speed_filter, feedback->speed_rpm);
+  controller->boundary_state = 0;
   return true;
+}
+```
+
+## GimbalControl_IsOutward
+
+编码器方向下的单向边界判断；逻辑电流方向门必须早于电机符号转换。
+
+源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 46 行。
+
+```c
+static bool GimbalControl_IsOutward(float value, int8_t boundary_state) {
+  return (boundary_state < 0 && value < 0.0f) ||
+         (boundary_state > 0 && value > 0.0f);
+}
+```
+
+## GimbalControl_ClearOutwardIntegrals
+
+机械饱和时清两级向外积分，保留向内积分。
+
+源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 52 行。
+
+```c
+static void GimbalControl_ClearOutwardIntegrals(GimbalControl_HandleTypeDef *controller,
+                                               int8_t boundary_state) {
+  if (GimbalControl_IsOutward(controller->position_integral_rpm, boundary_state)) {
+    controller->position_integral_rpm = 0.0f;
+  }
+  if (GimbalControl_IsOutward(controller->speed_pid.integral, boundary_state)) {
+    controller->speed_pid.integral = 0.0f;
+  }
 }
 ```
 
 ## GimbalControl_UpdateFeedback
 
-只过滤本次人工增量及对应前馈；分离惯性反馈和机械补偿，不裁剪自动纠偏。
+按轴配置先让步不可达目标再积分人工增量，运行级联PID/补偿/Ramp，最后限制向外电流并同步历史；Pitch和固定目标不启用让步。
 
-源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 163 行。
+源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 182 行。
 
 ```c
 void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
@@ -1692,9 +1724,6 @@ void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
     return;
   }
 
-  const float filtered_speed =
-      LowPassFilter_Update(&controller->speed_filter,
-                           (float)feedback->speed_rpm);
   const float requested_command_speed = command->enabled
       ? ((float)command->velocity_permille / 1000.0f) *
             controller->config.max_command_speed_rpm
@@ -1702,13 +1731,28 @@ void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
   const bool at_min = feedback->mechanical_angle_raw <= controller->config.min_angle_raw;
   const bool at_max = feedback->mechanical_angle_raw >= controller->config.max_angle_raw;
   const bool remote_command = !command->fixed_target;
+  const bool boundary_yield = controller->config.boundary_yield_enabled && remote_command;
+  const int8_t boundary_state = boundary_yield ? (at_min ? -1 : (at_max ? 1 : 0)) : 0;
+  if (boundary_state != controller->boundary_state) {
+    /* 进入或离开边界时消除旧滤波滞后和微分跳变，保留可用积分与 Ramp。 */
+    LowPassFilter_Reset(&controller->speed_filter, feedback->speed_rpm);
+    controller->speed_pid.initialized = false;
+    controller->boundary_state = boundary_state;
+  }
+  const float filtered_speed =
+      LowPassFilter_Update(&controller->speed_filter, feedback->speed_rpm);
+  const bool target_yielded = GimbalControl_IsOutward(
+      controller->target_angle_raw - feedback->angle_raw, boundary_state);
+  if (target_yielded) {
+    /* 只丢弃不可达方向的误差。先让步再接受向内输入，避免反向命令被覆盖。 */
+    controller->target_angle_raw = feedback->angle_raw;
+  }
+  GimbalControl_ClearOutwardIntegrals(controller, boundary_state);
   const bool outward_at_min = remote_command && at_min &&
                               requested_command_speed < 0.0f;
   const bool outward_at_max = remote_command && at_max &&
                               requested_command_speed > 0.0f;
-  /* 软件边界必须同时屏蔽目标积分和速度前馈。只拦截目标积分会留下正的
-   * 前馈速度，位置误差虽然为零，速度环仍会向挡块输出电流。（边界像红灯，
-   * 不能只禁止加速目标，却继续把油门信号送进下一环。） */
+  /* 人工限位同步屏蔽目标积分和速度前馈；只拦积分会留下继续向挡块运动的请求。 */
   const bool block_outward = outward_at_min || outward_at_max;
   bool command_limited = block_outward;
   float command_speed = block_outward ? 0.0f : requested_command_speed;
@@ -1717,7 +1761,7 @@ void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
   /* 只裁剪本次人工增量，不把惯性角与机械 min/max 直接比较。
    * 在当前姿态附近，用“机械角 + 惯性目标误差”估计候选机械目标；候选已在范围外时，
    * 只拒绝继续向外的增量，向内增量仍可逐步减小误差。反馈已到边界或越界时，
-   * 向内命令同周期完整接受。零输入完全跳过本段，底座运动不能重定位保持目标。 */
+   * 向内命令同周期完整接受。零输入跳过人工积分；边界让步已在本段前独立处理。 */
   if (command_speed != 0.0f) {
     const float raw_per_rpm_s = (float)GM6020_ENCODER_COUNTS_PER_REV / 60.0f;
     float increment_raw = command_speed * raw_per_rpm_s * dt_s;
@@ -1751,6 +1795,7 @@ void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
   controller->position_integral_rpm = GimbalControl_Clamp(
       integral_candidate, -controller->config.position_integral_limit_rpm,
       controller->config.position_integral_limit_rpm);
+  GimbalControl_ClearOutwardIntegrals(controller, boundary_state);
   const float angle_error_rate_raw_per_s =
       (command_speed - filtered_speed) *
       ((float)GM6020_ENCODER_COUNTS_PER_REV / 60.0f);
@@ -1778,6 +1823,7 @@ void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
   const float speed_error = target_speed - filtered_speed;
   const float speed_loop_current =
       Pid_Update(&controller->speed_pid, speed_error, dt_s);
+  GimbalControl_ClearOutwardIntegrals(controller, boundary_state);
   const float gravity_current = GravityCompensation_Update(
       &controller->gravity_compensation, feedback->mechanical_angle_raw);
   if (!isfinite(speed_loop_current) || !isfinite(gravity_current)) {
@@ -1791,9 +1837,20 @@ void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
     GimbalControl_ResetHistory(controller);
     return; /* 非有限计算结果不转换为 CAN 整数；输出保持本周期初始零值。 */
   }
-  const float ramped_current = Ramp_Update(
+  float ramped_current = Ramp_Update(
       &controller->current_ramp, combined_current,
       controller->config.current_slew_raw_per_s, dt_s);
+  if (!isfinite(ramped_current)) {
+    GimbalControl_ResetHistory(controller);
+    return;
+  }
+  const bool outward_current_limited =
+      GimbalControl_IsOutward(ramped_current, boundary_state);
+  if (outward_current_limited) {
+    /* 方向门必须位于 Ramp 后；同步历史为实际允许值，反向不必抵消旧向外斜坡。 */
+    ramped_current = 0.0f;
+    Ramp_Reset(&controller->current_ramp, ramped_current);
+  }
 
   output->target_angle_raw = GimbalControl_ToDiagnosticRaw(controller->target_angle_raw);
   output->angle_error_raw = GimbalControl_ToDiagnosticRaw(angle_error);
@@ -1808,6 +1865,8 @@ void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
   output->at_min_limit = at_min;
   output->at_max_limit = at_max;
   output->command_limited = command_limited;
+  output->target_yielded = target_yielded;
+  output->outward_current_limited = outward_current_limited;
   output->valid = true;
 }
 ```
@@ -1816,7 +1875,7 @@ void GimbalControl_UpdateFeedback(GimbalControl_HandleTypeDef *controller,
 
 机械反馈适配入口，转成分离反馈后调用同一正式控制器。
 
-源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 145 行。
+源文件：[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c)，定义始于第 164 行。
 
 ```c
 void GimbalControl_Update(GimbalControl_HandleTypeDef *controller,
@@ -2044,6 +2103,9 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
   if (fixed_target) {
     (void)GimbalControl_SetTargetAngle(&axis->controller, target_angle_raw);
   }
+  /* 固定角度调参不采用正式边界让步；编码器降级仍沿用本轴正式策略。 */
+  axis->controller.config.boundary_yield_enabled =
+      axis->config.control.boundary_yield_enabled && !fixed_target;
   GimbalControl_UpdateFeedback(&axis->controller, &feedback,
       effective_command, (float)dt_ms / 1000.0f, &axis->cycle.control);
   if (!axis->cycle.control.valid) {
@@ -2075,7 +2137,8 @@ static void GimbalAxis_Run(GimbalAxis_HandleTypeDef *axis,
     (void)GimbalAxis_SendZero(axis);
   }
 
-  if (axis->cycle.control.command_limited) {
+  if (axis->cycle.control.command_limited || axis->cycle.control.target_yielded ||
+      axis->cycle.control.outward_current_limited) {
     axis->cycle.phase = GIMBAL_AXIS_PHASE_LIMIT_HOLD;
   } else if (axis->cycle.control.accepted_command_speed_rpm != 0.0f) {
     axis->cycle.phase = GIMBAL_AXIS_PHASE_ACTIVE;

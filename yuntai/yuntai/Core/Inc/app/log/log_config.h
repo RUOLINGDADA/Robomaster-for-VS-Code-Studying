@@ -48,7 +48,7 @@
 #define LOG_DBUS_TEXT_ENABLE 0U /* DBUS 文本开关，0/1；输出原始数据和接收状态。 */
 #endif
 #ifndef LOG_DBUS_TRACE_ENABLE
-#define LOG_DBUS_TRACE_ENABLE 1U /* 输入逐帧采集，0/1；1独占日志分类，控制任务继续运行。 */
+#define LOG_DBUS_TRACE_ENABLE 0U /* 输入逐帧采集，0/1；1独占日志分类，控制任务继续运行。 */
 #endif
 #ifndef LOG_DBUS_CHART_ENABLE
 #define LOG_DBUS_CHART_ENABLE 0U /* DBUS 图表开关，0/1；输出 10 通道 ch: 帧。 */

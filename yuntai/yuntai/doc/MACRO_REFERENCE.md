@@ -188,7 +188,7 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 ```c
 #define GIMBAL_LOG_FORMAT \
-  "[%s] 反馈=%s 阶段=%s 原因=%s 命令百分之一‰=%ld 人工受限=%u 输入暂停=%u " \
+  "[%s] 反馈=%s 阶段=%s 原因=%s 命令百分之一‰=%ld 人工受限=%u 目标让步=%u 向外电流受限=%u 输入暂停=%u " \
   "目标/实际控制角毫度=%ld/%ld 误差等效count=%ld 编码器count=%ld " \
   "目标/控制反馈速度百分之一rpm=%ld/%ld 编码器rpm=%d " \
   "速度环/补偿/目标/提交/反馈电流=%d/%d/%d/%d/%d 输出许可=%u CAN提交=%u " \
@@ -199,7 +199,7 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 源文件：[Core/Inc/app/log/gimbal_log.h](../Core/Inc/app/log/gimbal_log.h)。
 
-Core引用：[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 86 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 127 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 125 行。
+Core引用：[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 86 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 127 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 126 行。
 
 ### GIMBAL_LOG_ARGS（第 39 行定义）
 
@@ -208,7 +208,9 @@ Core引用：[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm60
   label, GimbalAxis_FeedbackName((axis)->cycle.feedback_source), \
   GimbalAxis_PhaseName((axis)->cycle.phase), GimbalAxis_ReasonName((axis)->cycle.reason), \
   (long)GimbalLog_Scaled((command_permille), 100.0f), \
-  (axis)->cycle.control.command_limited ? 1U : 0U, (axis)->cycle.input_inhibited ? 1U : 0U, \
+  (axis)->cycle.control.command_limited ? 1U : 0U, \
+  (axis)->cycle.control.target_yielded ? 1U : 0U, \
+  (axis)->cycle.control.outward_current_limited ? 1U : 0U, (axis)->cycle.input_inhibited ? 1U : 0U, \
   (long)GimbalLog_Scaled((float)(axis)->cycle.control.target_angle_raw, 360000.0f / GM6020_ENCODER_COUNTS_PER_REV), \
   (long)GimbalLog_Scaled((axis)->cycle.control.feedback_angle_raw, 360000.0f / GM6020_ENCODER_COUNTS_PER_REV), \
   (long)(axis)->cycle.control.angle_error_raw, (long)(axis)->cycle.snapshot.feedback.angle_total_raw, \
@@ -231,7 +233,7 @@ Core引用：[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm60
 
 源文件：[Core/Inc/app/log/gimbal_log.h](../Core/Inc/app/log/gimbal_log.h)。
 
-Core引用：[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 87 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 128 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 126 行。
+Core引用：[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 87 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 128 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 127 行。
 
 ## Core/Inc/app/log/log.h
 
@@ -317,7 +319,7 @@ Core引用：[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm60
 
 源文件：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h)。
 
-Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 59 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 198 行；[Core/Src/task/task_dbus/task_dbus_trace.c](../Core/Src/task/task_dbus/task_dbus_trace.c) 第 210 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 201 行；[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c) 第 304 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 127 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 125 行。
+Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 59 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 198 行；[Core/Src/task/task_dbus/task_dbus_trace.c](../Core/Src/task/task_dbus/task_dbus_trace.c) 第 210 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 201 行；[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c) 第 304 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 127 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 126 行。
 
 ### LOG_TRY_PRINTF（第 60 行定义）
 
@@ -329,7 +331,7 @@ Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/
 
 源文件：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h)。
 
-Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 59 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 198 行；[Core/Src/task/task_dbus/task_dbus_trace.c](../Core/Src/task/task_dbus/task_dbus_trace.c) 第 210 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 201 行；[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c) 第 304 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 127 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 125 行。
+Core引用：[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 116 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 65 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 67 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 64 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 59 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 198 行；[Core/Src/task/task_dbus/task_dbus_trace.c](../Core/Src/task/task_dbus/task_dbus_trace.c) 第 210 行；[Core/Src/task/task_feed_motor/task_feed_motor.c](../Core/Src/task/task_feed_motor/task_feed_motor.c) 第 58 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 201 行；[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c) 第 304 行；[Core/Src/task/task_pitch/task_pitch.c](../Core/Src/task/task_pitch/task_pitch.c) 第 39 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 127 行；[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 39 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 126 行。
 
 ## Core/Inc/app/log/log_config.h
 
@@ -355,7 +357,7 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 56 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 61 行；[Core/Src/app/log/log.c](../Core/Src/app/log/log.c) 第 17 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 52 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 63 行；[Core/Src/task/task_dbus/task_dbus_trace.c](../Core/Src/task/task_dbus/task_dbus_trace.c) 第 18 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c) 第 280 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 125 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 123 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 56 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 61 行；[Core/Src/app/log/log.c](../Core/Src/app/log/log.c) 第 17 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 52 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 63 行；[Core/Src/task/task_dbus/task_dbus_trace.c](../Core/Src/task/task_dbus/task_dbus_trace.c) 第 18 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c) 第 280 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 125 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 124 行。
 
 ### LOG_USART1_ENABLE（第 18 行定义）
 
@@ -367,7 +369,7 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 56 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 56 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 61 行；[Core/Src/app/log/log.c](../Core/Src/app/log/log.c) 第 17 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 52 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 63 行；[Core/Src/task/task_dbus/task_dbus_trace.c](../Core/Src/task/task_dbus/task_dbus_trace.c) 第 18 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c) 第 280 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 125 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 123 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 56 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 61 行；[Core/Src/app/log/log.c](../Core/Src/app/log/log.c) 第 17 行；[Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c](../Core/Src/bsp/c610_m2006/test_c610_m2006_angle_step.c) 第 17 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/bsp/snail_2305/test_snail_2305.c](../Core/Src/bsp/snail_2305/test_snail_2305.c) 第 62 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 52 行；[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task_dbus/task_dbus_runtime.c) 第 63 行；[Core/Src/task/task_dbus/task_dbus_trace.c](../Core/Src/task/task_dbus/task_dbus_trace.c) 第 18 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c) 第 280 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 125 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 124 行。
 
 ### LOG_YAW_ENABLE（第 21 行定义）
 
@@ -379,7 +381,7 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 56 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 45 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 62 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 123 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 45 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 62 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 63 行；[Core/Src/bsp/gm6020/test_gm6020_calibration.c](../Core/Src/bsp/gm6020/test_gm6020_calibration.c) 第 52 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 124 行。
 
 ### LOG_PITCH_ENABLE（第 24 行定义）
 
@@ -463,7 +465,7 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 35 行；[C
 
 源文件：[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h)。
 
-Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 42 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 63 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 52 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 125 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 123 行。
+Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 42 行；[Core/Inc/app/log/log_config.h](../Core/Inc/app/log/log_config.h) 第 63 行；[Core/Src/task/task_chassis/task_chassis_runtime.c](../Core/Src/task/task_chassis/task_chassis_runtime.c) 第 52 行；[Core/Src/task/task_feed_motor/task_feed_motor_runtime.c](../Core/Src/task/task_feed_motor/task_feed_motor_runtime.c) 第 24 行；[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/task_pitch/task_pitch_runtime.c) 第 125 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 124 行。
 
 ### LOG_TEST_ENABLE（第 45 行定义）
 
@@ -492,7 +494,7 @@ Core引用：[Core/Inc/app/log/log.h](../Core/Inc/app/log/log.h) 第 43 行；[C
 ### LOG_DBUS_TRACE_ENABLE（第 51 行定义）
 
 ```c
-#define LOG_DBUS_TRACE_ENABLE 1U /* 输入逐帧采集，0/1；1独占日志分类，控制任务继续运行。 */
+#define LOG_DBUS_TRACE_ENABLE 0U /* 输入逐帧采集，0/1；1独占日志分类，控制任务继续运行。 */
 ```
 
 0/1输入采集分类开关；开启时独占日志带宽，MotionCal优先；不暂停设备控制。
@@ -953,7 +955,7 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 源文件：[Core/Inc/bsp/gm6020/gm6020.h](../Core/Inc/bsp/gm6020/gm6020.h)。
 
-Core引用：[Core/Inc/app/log/gimbal_log.h](../Core/Inc/app/log/gimbal_log.h) 第 44 行；[Core/Src/app/gimbal/gimbal_axis.c](../Core/Src/app/gimbal/gimbal_axis.c) 第 120 行；[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c) 第 206 行；[Core/Src/bsp/gm6020/gm6020.c](../Core/Src/bsp/gm6020/gm6020.c) 第 94 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 59 行。
+Core引用：[Core/Inc/app/log/gimbal_log.h](../Core/Inc/app/log/gimbal_log.h) 第 46 行；[Core/Src/app/gimbal/gimbal_axis.c](../Core/Src/app/gimbal/gimbal_axis.c) 第 120 行；[Core/Src/app/gimbal/gimbal_control.c](../Core/Src/app/gimbal/gimbal_control.c) 第 237 行；[Core/Src/bsp/gm6020/gm6020.c](../Core/Src/bsp/gm6020/gm6020.c) 第 94 行；[Core/Src/bsp/gm6020/test_gm6020_angle_loop.c](../Core/Src/bsp/gm6020/test_gm6020_angle_loop.c) 第 59 行。
 
 ### GM6020_CURRENT_RAW_MIN（第 36 行定义）
 
@@ -4147,7 +4149,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task
 #define DBUS_MOUSE_VIRTUAL_REFERENCE_PERIOD_MS 14U /* 鼠标测速参考周期，ms，1~INT32_MAX；增大会同比提高速度。 */
 ```
 
-平台/模板项，按原定义、源注释与引用判断；没有位置或速度控制公式。
+ms；位移测速的增益参考周期，v=clamp(本批位移×增益×参考周期/接收时间差)。首帧或同毫秒帧用该周期作分母。
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
@@ -4156,10 +4158,10 @@ Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_
 ### DBUS_YAW_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT（第 32 行定义）
 
 ```c
-#define DBUS_YAW_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT 0.5f /* Yaw 参考周期增益，‰/count，有限非负数；增大会提高灵敏度。 */
+#define DBUS_YAW_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT 5.0f /* Yaw 参考周期增益，‰/count，有限非负数；增大会提高灵敏度。 */
 ```
 
-新帧：v←clamp(v+相对位移×浮点增益)，单位‰/count，小数保留；增益分别取各轴配置，增大会提高鼠标灵敏度。
+参考周期下的‰/count增益；新帧按位移×增益×参考周期/接收时间差替换速度，不累计旧速度，小数保留。增大会提高灵敏度和触顶概率。
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
@@ -4171,7 +4173,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task
 #define DBUS_YAW_MOUSE_VIRTUAL_HOLD_MS 14U /* Yaw 缺帧保持，ms，可为 0；过小会在正常帧间提前降速。 */
 ```
 
-本轴最后非零事件后保持H毫秒，零位移和另一轴输入不续期。
+无新帧时从本轴最后非零接收时刻保持H毫秒；新零位移帧直接清本轴，另一轴不续期。
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
@@ -4204,10 +4206,10 @@ Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_
 ### DBUS_PITCH_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT（第 45 行定义）
 
 ```c
-#define DBUS_PITCH_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT 0.5f /* Pitch 参考周期增益，‰/count，有限非负数；增大会提高灵敏度。 */
+#define DBUS_PITCH_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT 5.0f /* Pitch 参考周期增益，‰/count，有限非负数；增大会提高灵敏度。 */
 ```
 
-新帧：v←clamp(v+相对位移×浮点增益)，单位‰/count，小数保留；增益分别取各轴配置，增大会提高鼠标灵敏度。
+参考周期下的‰/count增益；新帧按位移×增益×参考周期/接收时间差替换速度，不累计旧速度，小数保留。增大会提高灵敏度和触顶概率。
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
@@ -4219,7 +4221,7 @@ Core引用：[Core/Src/task/task_dbus/task_dbus_runtime.c](../Core/Src/task/task
 #define DBUS_PITCH_MOUSE_VIRTUAL_HOLD_MS 14U /* Pitch 缺帧保持，ms，可为 0；过小会在正常帧间提前降速。 */
 ```
 
-本轴最后非零事件后保持H毫秒，零位移和另一轴输入不续期。
+无新帧时从本轴最后非零接收时刻保持H毫秒；新零位移帧直接清本轴，另一轴不续期。
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
@@ -4264,10 +4266,10 @@ Core引用：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_
 ### DBUS_MOUSE_VIRTUAL_OUTPUT_LIMIT_PERMILLE（第 61 行定义）
 
 ```c
-#define DBUS_MOUSE_VIRTUAL_OUTPUT_LIMIT_PERMILLE 100 /* 鼠标上限，1~1000‰；两轴满输入40rpm时仅鼠标目标速度限为4rpm。 */
+#define DBUS_MOUSE_VIRTUAL_OUTPUT_LIMIT_PERMILLE 300 /* 鼠标上限，1~1000‰；两轴满输入40rpm时鼠标目标速度最高12rpm。 */
 ```
 
-虚拟鼠标单独限幅±L‰，当前100；满输入40 rpm时鼠标目标速度最高4 rpm。摇杆合成后再限幅±1000‰，不限制闭环纠偏。
+鼠标分量单独限幅±L‰；目标角速度上限为L/1000×轴满输入rpm×6，单位deg/s。摇杆合成后再限幅±1000‰，不限制闭环纠偏。
 
 源文件：[Core/Inc/task/task_dbus/task_dbus_config.h](../Core/Inc/task/task_dbus/task_dbus_config.h)。
 
@@ -5418,7 +5420,7 @@ Core引用：[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/ta
 ### PITCH_GRAVITY_COMPENSATION_BIAS_CURRENT_RAW（第 54 行定义）
 
 ```c
-#define PITCH_GRAVITY_COMPENSATION_BIAS_CURRENT_RAW 4500.0f /* 重力偏置，GM6020 raw；保持时下垂可增加，温升高时降低。 */
+#define PITCH_GRAVITY_COMPENSATION_BIAS_CURRENT_RAW 2000.0f /* 重力偏置，GM6020 raw；保持时下垂可增加，温升高时降低。 */
 ```
 
 余弦补偿常值B，模型sign×(B+A×cos(theta))。
@@ -5430,7 +5432,7 @@ Core引用：[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/ta
 ### PITCH_GRAVITY_COMPENSATION_AMPLITUDE_CURRENT_RAW（第 55 行定义）
 
 ```c
-#define PITCH_GRAVITY_COMPENSATION_AMPLITUDE_CURRENT_RAW 1500.0f /* 角度补偿幅值，GM6020 raw；不同角度静差不同时调整。 */
+#define PITCH_GRAVITY_COMPENSATION_AMPLITUDE_CURRENT_RAW 2000.0f /* 角度补偿幅值，GM6020 raw；不同角度静差不同时调整。 */
 ```
 
 余弦补偿幅值A，要求B+A≤补偿模型电流上限。
@@ -5454,7 +5456,7 @@ Core引用：[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/ta
 ### PITCH_MAX_COMMAND_SPEED_RPM（第 57 行定义）
 
 ```c
-#define PITCH_MAX_COMMAND_SPEED_RPM 40.0f /* 满输入速度，rpm；整体动作过快时减小。 */
+#define PITCH_MAX_COMMAND_SPEED_RPM 70.0f /* 满输入速度，rpm；整体动作过快时减小。 */
 ```
 
 输入p/1000×Vmax为rpm，目标count积分增量rpm×8192/60×dt_s。
@@ -5478,7 +5480,7 @@ Core引用：[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/ta
 ### PITCH_MAX_SPEED_TARGET_RPM（第 61 行定义）
 
 ```c
-#define PITCH_MAX_SPEED_TARGET_RPM 70.0f /* 速度目标上限，rpm；过快时降低，饱和时先检查此项。 */
+#define PITCH_MAX_SPEED_TARGET_RPM 120.0f /* 速度目标上限，rpm；过快时降低，饱和时先检查此项。 */
 ```
 
 外环目标速度限幅；位置P变大无法突破该rpm上限。
@@ -5502,7 +5504,7 @@ Core引用：[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/ta
 ### PITCH_POSITION_KI_RPM_PER_RAW_S（第 64 行定义）
 
 ```c
-#define PITCH_POSITION_KI_RPM_PER_RAW_S 0.1f /* 位置 I，rpm/(count·s)；持续静差时增加，摆动时降低。 */
+#define PITCH_POSITION_KI_RPM_PER_RAW_S 0.0f /* 位置 I，rpm/(count·s)；持续静差时增加，摆动时降低。 */
 ```
 
 位置积分：Ki×误差×dt_s；目标速度饱和且误差向外时恢复上一积分。
@@ -5550,7 +5552,7 @@ Core引用：[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/ta
 ### PITCH_SPEED_KI_CURRENT_PER_RPM_S（第 68 行定义）
 
 ```c
-#define PITCH_SPEED_KI_CURRENT_PER_RPM_S 50.0f /* 速度 I，raw/(rpm·s)；持续速度静差时增加，摆动时降低。 */
+#define PITCH_SPEED_KI_CURRENT_PER_RPM_S 20.0f /* 速度 I，raw/(rpm·s)；持续速度静差时增加，摆动时降低。 */
 ```
 
 速度I：Ki×速度误差×dt_s；候选积分限幅和条件保存。
@@ -5574,7 +5576,7 @@ Core引用：[Core/Src/task/task_pitch/task_pitch_runtime.c](../Core/Src/task/ta
 ### PITCH_SPEED_KD_CURRENT_S_PER_RPM（第 70 行定义）
 
 ```c
-#define PITCH_SPEED_KD_CURRENT_S_PER_RPM 0.0f /* 速度 D，raw·s/rpm；测速跳变造成冲击时降低。 */
+#define PITCH_SPEED_KD_CURRENT_S_PER_RPM 1.5f /* 速度 D，raw·s/rpm；测速跳变造成冲击时降低。 */
 ```
 
 速度D：Kd×(本误差−上一误差)/dt_s；首帧微分为零。
@@ -5795,7 +5797,19 @@ deg，0<值<退出阈值，当前75；编码器保持时回到该内区且连续
 
 Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 56 行。
 
-### YAW_HARDWARE_TEST_MODE_OFF（第 37 行定义）
+### YAW_BOUNDARY_YIELD_ENABLE（第 38 行定义）
+
+```c
+#define YAW_BOUNDARY_YIELD_ENABLE 1U /* 正式边界策略，0/1；1丢弃不可达向外误差并禁止向外电流，固定角度测试不启用。 */
+```
+
+无量纲0/1，默认1；正式Yaw在编码器边界丢弃不可达向外误差、清向外积分并在Ramp后禁止向外电流及同步历史。0只限制人工增量/前馈；固定机械角测试始终关闭让步，不改变IMU连续航向。
+
+源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
+
+Core引用：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h) 第 40 行；[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 61 行。
+
+### YAW_HARDWARE_TEST_MODE_OFF（第 42 行定义）
 
 ```c
 #define YAW_HARDWARE_TEST_MODE_OFF 0U /* 正式控制模式，0；使用摇杆和鼠标命令。 */
@@ -5807,7 +5821,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 Core无额外引用命中：可能为包含保护、第三方消费、模板未用项或条件分支，检查预处理结果再判断生效性。
 
-### YAW_HARDWARE_TEST_MODE_CALIBRATION（第 38 行定义）
+### YAW_HARDWARE_TEST_MODE_CALIBRATION（第 43 行定义）
 
 ```c
 #define YAW_HARDWARE_TEST_MODE_CALIBRATION 1U /* 只读标定模式，1；手动移动并记录角度。 */
@@ -5819,7 +5833,7 @@ Core无额外引用命中：可能为包含保护、第三方消费、模板未�
 
 Core引用：[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 48 行。
 
-### YAW_HARDWARE_TEST_MODE_ANGLE_LOOP（第 39 行定义）
+### YAW_HARDWARE_TEST_MODE_ANGLE_LOOP（第 44 行定义）
 
 ```c
 #define YAW_HARDWARE_TEST_MODE_ANGLE_LOOP 2U /* 固定角度测试模式，2；验证位置保持时使用。 */
@@ -5831,7 +5845,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_
 
 Core引用：[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 52 行。
 
-### YAW_HARDWARE_TEST_MODE（第 42 行定义）
+### YAW_HARDWARE_TEST_MODE（第 47 行定义）
 
 ```c
 #define YAW_HARDWARE_TEST_MODE YAW_HARDWARE_TEST_MODE_OFF /* 任务模式，0/1/2；正式运行选 OFF。 */
@@ -5843,7 +5857,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_
 
 Core引用：[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 48 行。
 
-### YAW_CALIBRATION_VALID（第 45 行定义）
+### YAW_CALIBRATION_VALID（第 50 行定义）
 
 ```c
 #define YAW_CALIBRATION_VALID 1U /* 标定许可，0/1；完成本轴标定后置 1。 */
@@ -5855,7 +5869,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_
 
 Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 44 行。
 
-### YAW_TASK_PERIOD_MS（第 46 行定义）
+### YAW_TASK_PERIOD_MS（第 51 行定义）
 
 ```c
 #define YAW_TASK_PERIOD_MS 2U /* 控制周期，ms；改变后检查调度负载。 */
@@ -5867,7 +5881,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 Core引用：[Core/Src/task/task_yaw/task_yaw.c](../Core/Src/task/task_yaw/task_yaw.c) 第 23 行。
 
-### YAW_FEEDBACK_TIMEOUT_MS（第 47 行定义）
+### YAW_FEEDBACK_TIMEOUT_MS（第 52 行定义）
 
 ```c
 #define YAW_FEEDBACK_TIMEOUT_MS 100U /* 反馈期限，HAL ms；增大会延迟掉线清零。 */
@@ -5879,7 +5893,7 @@ HAL同源年龄≥期限离线，先检查真实首帧；发送前重新判断�
 
 Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 39 行。
 
-### YAW_COMMAND_TIMEOUT_MS（第 48 行定义）
+### YAW_COMMAND_TIMEOUT_MS（第 53 行定义）
 
 ```c
 #define YAW_COMMAND_TIMEOUT_MS 100U /* 输入期限，HAL ms；过期冻结目标并继续位置保持。 */
@@ -5891,7 +5905,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 Core引用：[Core/Src/task/task_yaw/task_yaw_command.c](../Core/Src/task/task_yaw/task_yaw_command.c) 第 91 行。
 
-### YAW_TASK_LOG_PERIOD_MS（第 49 行定义）
+### YAW_TASK_LOG_PERIOD_MS（第 54 行定义）
 
 ```c
 #define YAW_TASK_LOG_PERIOD_MS 500U /* 诊断周期，ms；串口刷屏时增大。 */
@@ -5901,9 +5915,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_command.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 124 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 125 行。
 
-### YAW_CALIBRATION_CENTER_ANGLE_RAW（第 50 行定义）
+### YAW_CALIBRATION_CENTER_ANGLE_RAW（第 55 行定义）
 
 ```c
 #define YAW_CALIBRATION_CENTER_ANGLE_RAW 2100 /* 中位连续角度，count；重新标定后填写。 */
@@ -5915,7 +5929,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 45 行。
 
-### YAW_CALIBRATION_MIN_ANGLE_RAW（第 51 行定义）
+### YAW_CALIBRATION_MIN_ANGLE_RAW（第 56 行定义）
 
 ```c
 #define YAW_CALIBRATION_MIN_ANGLE_RAW 115 /* 软件下界，连续 count；按实测边界设置并保留余量。 */
@@ -5927,7 +5941,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 46 行。
 
-### YAW_CALIBRATION_MAX_ANGLE_RAW（第 52 行定义）
+### YAW_CALIBRATION_MAX_ANGLE_RAW（第 57 行定义）
 
 ```c
 #define YAW_CALIBRATION_MAX_ANGLE_RAW 4085 /* 软件上界，连续 count；按实测边界设置并保留余量。 */
@@ -5939,7 +5953,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 47 行。
 
-### YAW_MOTOR_CURRENT_SIGN（第 53 行定义）
+### YAW_MOTOR_CURRENT_SIGN（第 58 行定义）
 
 ```c
 #define YAW_MOTOR_CURRENT_SIGN 1 /* 闭环电流方向，+1/-1；正误差驱动反向时核对。 */
@@ -5951,7 +5965,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 37 行。
 
-### YAW_FEEDBACK_SPEED_SIGN（第 54 行定义）
+### YAW_FEEDBACK_SPEED_SIGN（第 59 行定义）
 
 ```c
 #define YAW_FEEDBACK_SPEED_SIGN 1 /* 反馈速度方向，+1/-1；与连续角度增量同向。 */
@@ -5963,7 +5977,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 38 行。
 
-### YAW_GRAVITY_COMPENSATION_ENABLE（第 56 行定义）
+### YAW_GRAVITY_COMPENSATION_ENABLE（第 61 行定义）
 
 ```c
 #define YAW_GRAVITY_COMPENSATION_ENABLE 0U /* 重力补偿开关，0/1；水平轴关闭，负载下垂时检查。 */
@@ -5973,9 +5987,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 77 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 78 行。
 
-### YAW_GRAVITY_COMPENSATION_BIAS_CURRENT_RAW（第 57 行定义）
+### YAW_GRAVITY_COMPENSATION_BIAS_CURRENT_RAW（第 62 行定义）
 
 ```c
 #define YAW_GRAVITY_COMPENSATION_BIAS_CURRENT_RAW 0.0f /* 重力偏置，GM6020 raw；保持时下垂可增加，温升高时降低。 */
@@ -5985,9 +5999,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 79 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 80 行。
 
-### YAW_GRAVITY_COMPENSATION_AMPLITUDE_CURRENT_RAW（第 58 行定义）
+### YAW_GRAVITY_COMPENSATION_AMPLITUDE_CURRENT_RAW（第 63 行定义）
 
 ```c
 #define YAW_GRAVITY_COMPENSATION_AMPLITUDE_CURRENT_RAW 0.0f /* 角度补偿幅值，GM6020 raw；不同角度静差不同时调整。 */
@@ -5997,9 +6011,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 80 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 81 行。
 
-### YAW_GRAVITY_CURRENT_SIGN（第 59 行定义）
+### YAW_GRAVITY_CURRENT_SIGN（第 64 行定义）
 
 ```c
 #define YAW_GRAVITY_CURRENT_SIGN 1 /* 重力电流方向，+1/-1；独立于闭环电流方向。 */
@@ -6009,21 +6023,21 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 81 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 82 行。
 
-### YAW_MAX_COMMAND_SPEED_RPM（第 61 行定义）
+### YAW_MAX_COMMAND_SPEED_RPM（第 66 行定义）
 
 ```c
-#define YAW_MAX_COMMAND_SPEED_RPM 40.0f /* 满输入速度，rpm；整体动作过快时减小。 */
+#define YAW_MAX_COMMAND_SPEED_RPM 70.0f /* 满输入速度，rpm；整体动作过快时减小。 */
 ```
 
 输入p/1000×Vmax为rpm，目标count积分增量rpm×8192/60×dt_s。
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 61 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 62 行。
 
-### YAW_VELOCITY_FEEDFORWARD_GAIN（第 63 行定义）
+### YAW_VELOCITY_FEEDFORWARD_GAIN（第 68 行定义）
 
 ```c
 #define YAW_VELOCITY_FEEDFORWARD_GAIN 1.2f /* 速度前馈，无量纲且非负；跟随落后时增加，超前时降低。 */
@@ -6033,21 +6047,21 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 71 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 72 行。
 
-### YAW_MAX_SPEED_TARGET_RPM（第 65 行定义）
+### YAW_MAX_SPEED_TARGET_RPM（第 70 行定义）
 
 ```c
-#define YAW_MAX_SPEED_TARGET_RPM 95.0f /* 速度目标上限，rpm；过快时降低，饱和时先检查此项。 */
+#define YAW_MAX_SPEED_TARGET_RPM 120.0f /* 速度目标上限，rpm；过快时降低，饱和时先检查此项。 */
 ```
 
 外环目标速度限幅；位置P变大无法突破该rpm上限。
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 62 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 63 行。
 
-### YAW_POSITION_KP_RPM_PER_RAW（第 67 行定义）
+### YAW_POSITION_KP_RPM_PER_RAW（第 72 行定义）
 
 ```c
 #define YAW_POSITION_KP_RPM_PER_RAW 0.01f /* 位置 P，rpm/count；响应慢时增加，过冲时降低。 */
@@ -6057,9 +6071,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 63 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 64 行。
 
-### YAW_POSITION_KI_RPM_PER_RAW_S（第 68 行定义）
+### YAW_POSITION_KI_RPM_PER_RAW_S（第 73 行定义）
 
 ```c
 #define YAW_POSITION_KI_RPM_PER_RAW_S 0.0f /* 位置 I，rpm/(count·s)；持续静差时增加，摆动时降低。 */
@@ -6069,9 +6083,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 64 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 65 行。
 
-### YAW_POSITION_INTEGRAL_LIMIT_RPM（第 69 行定义）
+### YAW_POSITION_INTEGRAL_LIMIT_RPM（第 74 行定义）
 
 ```c
 #define YAW_POSITION_INTEGRAL_LIMIT_RPM 5.0f /* 位置积分上限，rpm，0~MAX_SPEED_TARGET；过冲时降低。 */
@@ -6081,9 +6095,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 65 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 66 行。
 
-### YAW_POSITION_KD_RPM_S_PER_RAW（第 70 行定义）
+### YAW_POSITION_KD_RPM_S_PER_RAW（第 75 行定义）
 
 ```c
 #define YAW_POSITION_KD_RPM_S_PER_RAW 0.0f /* 位置 D，rpm·s/count；增加制动，过大会放大噪声。 */
@@ -6093,9 +6107,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 66 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 67 行。
 
-### YAW_SPEED_KP_CURRENT_PER_RPM（第 71 行定义）
+### YAW_SPEED_KP_CURRENT_PER_RPM（第 76 行定义）
 
 ```c
 #define YAW_SPEED_KP_CURRENT_PER_RPM 200.0f /* 速度 P，raw/rpm；跟随慢时增加，测速噪声大时降低。 */
@@ -6105,9 +6119,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 67 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 68 行。
 
-### YAW_SPEED_KI_CURRENT_PER_RPM_S（第 72 行定义）
+### YAW_SPEED_KI_CURRENT_PER_RPM_S（第 77 行定义）
 
 ```c
 #define YAW_SPEED_KI_CURRENT_PER_RPM_S 20.0f /* 速度 I，raw/(rpm·s)；持续速度静差时增加，摆动时降低。 */
@@ -6117,9 +6131,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 68 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 69 行。
 
-### YAW_MAX_CURRENT_RAW（第 74 行定义）
+### YAW_MAX_CURRENT_RAW（第 79 行定义）
 
 ```c
 #define YAW_MAX_CURRENT_RAW 7000.0f /* 总电流上限，GM6020 raw，(0,16384]；增大会提高力矩和温升。 */
@@ -6129,9 +6143,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 72 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 73 行。
 
-### YAW_SPEED_KD_CURRENT_S_PER_RPM（第 75 行定义）
+### YAW_SPEED_KD_CURRENT_S_PER_RPM（第 80 行定义）
 
 ```c
 #define YAW_SPEED_KD_CURRENT_S_PER_RPM 1.5f /* 速度 D，raw·s/rpm；测速跳变造成冲击时降低。 */
@@ -6141,9 +6155,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 69 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 70 行。
 
-### YAW_SPEED_INTEGRAL_LIMIT_RAW（第 76 行定义）
+### YAW_SPEED_INTEGRAL_LIMIT_RAW（第 81 行定义）
 
 ```c
 #define YAW_SPEED_INTEGRAL_LIMIT_RAW YAW_MAX_CURRENT_RAW /* 速度积分上限，raw，0~MAX_CURRENT；恢复冲击大时降低。 */
@@ -6153,9 +6167,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 70 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 71 行。
 
-### YAW_CURRENT_SLEW_RAW_PER_S（第 77 行定义）
+### YAW_CURRENT_SLEW_RAW_PER_S（第 82 行定义）
 
 ```c
 #define YAW_CURRENT_SLEW_RAW_PER_S 60000.0f /* 电流斜率，raw/s；冲击大时降低，制动滞后时增加。 */
@@ -6165,9 +6179,9 @@ Ramp变化最多rate×dt_s；PWM速率=(活动−停止)×1000/RAMP_MS。
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 73 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 74 行。
 
-### YAW_SPEED_FILTER_ALPHA（第 78 行定义）
+### YAW_SPEED_FILTER_ALPHA（第 83 行定义）
 
 ```c
 #define YAW_SPEED_FILTER_ALPHA 0.20f /* 测速权重，(0,1]；噪声大时降低，制动滞后时增加。 */
@@ -6177,9 +6191,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 74 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 75 行。
 
-### YAW_ANGLE_LOOP_TARGET_ANGLE_DEG（第 80 行定义）
+### YAW_ANGLE_LOOP_TARGET_ANGLE_DEG（第 85 行定义）
 
 ```c
 #define YAW_ANGLE_LOOP_TARGET_ANGLE_DEG 30.0f /* 测试目标，相对中位 deg；保持测试时设置，必须在软件边界内。 */
@@ -6189,9 +6203,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 96 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 97 行。
 
-### YAW_ANGLE_LOOP_LOG_PERIOD_MS（第 81 行定义）
+### YAW_ANGLE_LOOP_LOG_PERIOD_MS（第 86 行定义）
 
 ```c
 #define YAW_ANGLE_LOOP_LOG_PERIOD_MS 200U /* 角度测试日志周期，ms；串口刷屏时增大。 */
@@ -6201,9 +6215,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 97 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 98 行。
 
-### YAW_CALIBRATION_LOG_PERIOD_MS（第 83 行定义）
+### YAW_CALIBRATION_LOG_PERIOD_MS（第 88 行定义）
 
 ```c
 #define YAW_CALIBRATION_LOG_PERIOD_MS 200U /* 标定日志周期，ms；漏看角度变化时减小。 */
@@ -6213,9 +6227,9 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 92 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 93 行。
 
-### YAW_CALIBRATION_PROMPT_PERIOD_MS（第 84 行定义）
+### YAW_CALIBRATION_PROMPT_PERIOD_MS（第 89 行定义）
 
 ```c
 #define YAW_CALIBRATION_PROMPT_PERIOD_MS 3000U /* 标定提示周期，ms；提示过密时增大。 */
@@ -6225,7 +6239,7 @@ Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_y
 
 源文件：[Core/Inc/task/task_yaw/task_yaw_config.h](../Core/Inc/task/task_yaw/task_yaw_config.h)。
 
-Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 93 行。
+Core引用：[Core/Src/task/task_yaw/task_yaw_runtime.c](../Core/Src/task/task_yaw/task_yaw_runtime.c) 第 94 行。
 
 ## Core/Inc/task/task_yaw/task_yaw_runtime.h
 
@@ -6710,4 +6724,4 @@ IST8310 0.3μT/LSB转MotionCal 0.1μT/count，原始有符号值先扩展再乘3
 
 Core引用：[Core/Src/task/task_ins/task_ins_runtime.c](../Core/Src/task/task_ins/task_ins_runtime.c) 第 301 行。
 
-共覆盖 541 个未注释的宏定义位置。
+共覆盖 542 个未注释的宏定义位置。

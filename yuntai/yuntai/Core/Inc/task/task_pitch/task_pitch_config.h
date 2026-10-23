@@ -51,23 +51,23 @@ _Static_assert(PITCH_STABILIZATION_ENABLE <= 1U, "stabilization enable must be 0
 #define PITCH_FEEDBACK_SPEED_SIGN 1 /* 反馈速度方向，+1/-1；与连续角度增量同向。 */
 
 #define PITCH_GRAVITY_COMPENSATION_ENABLE 1U /* 重力补偿开关，0/1；水平轴关闭，负载下垂时检查。 */
-#define PITCH_GRAVITY_COMPENSATION_BIAS_CURRENT_RAW 4500.0f /* 重力偏置，GM6020 raw；保持时下垂可增加，温升高时降低。 */
-#define PITCH_GRAVITY_COMPENSATION_AMPLITUDE_CURRENT_RAW 1500.0f /* 角度补偿幅值，GM6020 raw；不同角度静差不同时调整。 */
+#define PITCH_GRAVITY_COMPENSATION_BIAS_CURRENT_RAW 2000.0f /* 重力偏置，GM6020 raw；保持时下垂可增加，温升高时降低。 */
+#define PITCH_GRAVITY_COMPENSATION_AMPLITUDE_CURRENT_RAW 2000.0f /* 角度补偿幅值，GM6020 raw；不同角度静差不同时调整。 */
 #define PITCH_GRAVITY_CURRENT_SIGN 1 /* 重力电流方向，+1/-1；独立于闭环电流方向。 */
-#define PITCH_MAX_COMMAND_SPEED_RPM 40.0f /* 满输入速度，rpm；整体动作过快时减小。 */
+#define PITCH_MAX_COMMAND_SPEED_RPM 70.0f /* 满输入速度，rpm；整体动作过快时减小。 */
 
 #define PITCH_VELOCITY_FEEDFORWARD_GAIN 0.8f /* 速度前馈，无量纲且非负；跟随落后时增加，超前时降低。 */
 
-#define PITCH_MAX_SPEED_TARGET_RPM 70.0f /* 速度目标上限，rpm；过快时降低，饱和时先检查此项。 */
+#define PITCH_MAX_SPEED_TARGET_RPM 120.0f /* 速度目标上限，rpm；过快时降低，饱和时先检查此项。 */
 
 #define PITCH_POSITION_KP_RPM_PER_RAW 0.01f /* 位置 P，rpm/count；响应慢时增加，过冲时降低。 */
-#define PITCH_POSITION_KI_RPM_PER_RAW_S 0.1f /* 位置 I，rpm/(count·s)；持续静差时增加，摆动时降低。 */
+#define PITCH_POSITION_KI_RPM_PER_RAW_S 0.0f /* 位置 I，rpm/(count·s)；持续静差时增加，摆动时降低。 */
 #define PITCH_POSITION_INTEGRAL_LIMIT_RPM 5.0f /* 位置积分上限，rpm，0~MAX_SPEED_TARGET；过冲时降低。 */
 #define PITCH_POSITION_KD_RPM_S_PER_RAW 0.0f /* 位置 D，rpm·s/count；增加制动，过大会放大噪声。 */
 #define PITCH_SPEED_KP_CURRENT_PER_RPM 200.0f /* 速度 P，raw/rpm；跟随慢时增加，测速噪声大时降低。 */
-#define PITCH_SPEED_KI_CURRENT_PER_RPM_S 50.0f /* 速度 I，raw/(rpm·s)；持续速度静差时增加，摆动时降低。 */
+#define PITCH_SPEED_KI_CURRENT_PER_RPM_S 20.0f /* 速度 I，raw/(rpm·s)；持续速度静差时增加，摆动时降低。 */
 #define PITCH_MAX_CURRENT_RAW 7000.0f /* 总电流上限，GM6020 raw，(0,16384]；增大会提高力矩和温升。 */
-#define PITCH_SPEED_KD_CURRENT_S_PER_RPM 0.0f /* 速度 D，raw·s/rpm；测速跳变造成冲击时降低。 */
+#define PITCH_SPEED_KD_CURRENT_S_PER_RPM 1.5f /* 速度 D，raw·s/rpm；测速跳变造成冲击时降低。 */
 #define PITCH_SPEED_INTEGRAL_LIMIT_RAW PITCH_MAX_CURRENT_RAW /* 速度积分上限，raw，0~MAX_CURRENT；恢复冲击大时降低。 */
 #define PITCH_CURRENT_SLEW_RAW_PER_S 60000.0f /* 电流斜率，raw/s；冲击大时降低，制动滞后时增加。 */
 #define PITCH_SPEED_FILTER_ALPHA 0.15f /* 测速权重，(0,1]；噪声大时降低，制动滞后时增加。 */

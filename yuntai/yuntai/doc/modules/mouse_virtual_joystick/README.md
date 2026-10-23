@@ -29,16 +29,16 @@ v = clamp(delta_count × signed_gain × reference_period_ms / dt_ms, -limit, +li
 | 参数 | 当前值、单位与范围 | 直接作用 |
 | --- | --- | --- |
 | `DBUS_MOUSE_VIRTUAL_REFERENCE_PERIOD_MS` | 14 ms，1~INT32_MAX | 增益对应的参考周期；增大同比提高测速输出 |
-| `DBUS_*_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT` | 两轴均 0.5 ‰/count，有限非负 | 参考周期下每 count 的命令；增大会提高灵敏度和触顶概率 |
+| `DBUS_*_MOUSE_VIRTUAL_GAIN_PERMILLE_PER_COUNT` | 两轴均 5.0 ‰/count，有限非负 | 参考周期下每 count 的命令；增大会提高灵敏度和触顶概率 |
 | `DBUS_*_MOUSE_VIRTUAL_SIGN` | Yaw=-1、Pitch=+1 | 只改变鼠标输入方向 |
 | `DBUS_*_MOUSE_VIRTUAL_HOLD_MS` | 两轴均 14 ms，可为 0 | 无新帧时从最后非零接收时刻开始保持；零位移新帧直接清零 |
 | `DBUS_*_MOUSE_VIRTUAL_DECAY_MS` | 两轴均 14 ms，>0 | 缺帧保持结束后的回中时长；与保持之和不超过 INT32_MAX |
-| `DBUS_MOUSE_VIRTUAL_OUTPUT_LIMIT_PERMILLE` | 100‰，1~1000 | 只限制鼠标分量；两轴满输入 40 rpm 时对应最高 4 rpm，即 24°/s |
+| `DBUS_MOUSE_VIRTUAL_OUTPUT_LIMIT_PERMILLE` | 300‰，1~1000 | 只限制鼠标分量；两轴满输入 40 rpm 时对应最高 12 rpm，即 72°/s |
 | `DBUS_MOUSE_VIRTUAL_ENABLE` | 1，0/1 | 关闭时清鼠标状态，摇杆正常发布 |
 
-例如连续两帧间隔均为 14 ms，X 位移均为 20 count：每帧均输出 -10‰，不会累加到 -20‰。下一帧 X=-1 时输出 +0.5‰；再下一帧 X=0 时立即输出零。28 ms 累计 40 count 同样输出 -10‰。小数直接进入速度命令，不取整回写。
+例如连续两帧间隔均为 14 ms，X 位移均为 20 count：每帧均输出 -100‰，不会累加到 -200‰。下一帧 X=-1 时输出 +5‰；再下一帧 X=0 时立即输出零。28 ms 累计 40 count 同样输出 -100‰。小数直接进入速度命令，不取整回写。
 
-当前增益表示每个参考周期内的位移测速增益。调灵敏度优先改对应轴增益；参考周期用于规定单位，不建议同时调整两者。正常接收约 14 ms，一 count 对应约 0.12°/s 目标速度；本次 Yaw 原始输入较小，新手感和小动作速度待上板。
+当前增益表示每个参考周期内的位移测速增益。调灵敏度优先改对应轴增益；参考周期用于规定单位，不建议同时调整两者。正常接收约 14 ms，一 count 对应约 1.2°/s 目标速度，60 count 达到300‰上限。用户反馈移动慢后，保留现有两轴5.0增益，将上限从100‰调至300‰，使目标速度上限由24°/s提高至72°/s；未触旧上限的小动作不因此加速。实际速度受闭环跟踪及人工限位影响，手感和带载制动待上板。
 
 ## 时序、状态和故障
 

@@ -34,6 +34,11 @@
 
 _Static_assert(YAW_STABILIZATION_ENABLE <= 1U, "stabilization enable must be 0 or 1");
 
+#ifndef YAW_BOUNDARY_YIELD_ENABLE
+#define YAW_BOUNDARY_YIELD_ENABLE 1U /* 正式边界策略，0/1；1丢弃不可达向外误差并禁止向外电流，固定角度测试不启用。 */
+#endif
+_Static_assert(YAW_BOUNDARY_YIELD_ENABLE <= 1U, "boundary yield enable must be 0 or 1");
+
 #define YAW_HARDWARE_TEST_MODE_OFF 0U /* 正式控制模式，0；使用摇杆和鼠标命令。 */
 #define YAW_HARDWARE_TEST_MODE_CALIBRATION 1U /* 只读标定模式，1；手动移动并记录角度。 */
 #define YAW_HARDWARE_TEST_MODE_ANGLE_LOOP 2U /* 固定角度测试模式，2；验证位置保持时使用。 */
@@ -58,11 +63,11 @@ _Static_assert(YAW_STABILIZATION_ENABLE <= 1U, "stabilization enable must be 0 o
 #define YAW_GRAVITY_COMPENSATION_AMPLITUDE_CURRENT_RAW 0.0f /* 角度补偿幅值，GM6020 raw；不同角度静差不同时调整。 */
 #define YAW_GRAVITY_CURRENT_SIGN 1 /* 重力电流方向，+1/-1；独立于闭环电流方向。 */
 
-#define YAW_MAX_COMMAND_SPEED_RPM 40.0f /* 满输入速度，rpm；整体动作过快时减小。 */
+#define YAW_MAX_COMMAND_SPEED_RPM 70.0f /* 满输入速度，rpm；整体动作过快时减小。 */
 
 #define YAW_VELOCITY_FEEDFORWARD_GAIN 1.2f /* 速度前馈，无量纲且非负；跟随落后时增加，超前时降低。 */
 
-#define YAW_MAX_SPEED_TARGET_RPM 95.0f /* 速度目标上限，rpm；过快时降低，饱和时先检查此项。 */
+#define YAW_MAX_SPEED_TARGET_RPM 120.0f /* 速度目标上限，rpm；过快时降低，饱和时先检查此项。 */
 
 #define YAW_POSITION_KP_RPM_PER_RAW 0.01f /* 位置 P，rpm/count；响应慢时增加，过冲时降低。 */
 #define YAW_POSITION_KI_RPM_PER_RAW_S 0.0f /* 位置 I，rpm/(count·s)；持续静差时增加，摆动时降低。 */
